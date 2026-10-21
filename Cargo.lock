@@ -4423,6 +4423,7 @@ dependencies = [
 name = "solidcraft-manufacture"
 version = "0.22.0"
 dependencies = [
+ "serde_json",
  "sx-core",
  "thiserror 2.0.21",
 ]

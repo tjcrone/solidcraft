@@ -74,10 +74,43 @@ fn bad_requests_are_refused_and_nothing_is_written() {
         json!({"path": path, "config": missing}),
         json!({"path": path, "config": not_object}),
         json!({"path": path, "settings": 7}),
-        json!({"path": path, "settings": {"layer_height": "tall"}}),
+        json!({"path": path, "config": 7}),
+        json!({"path": path, "config": [""]}),
     ] {
         assert!(s.execute("print.slice", &p).is_err(), "{p}");
     }
     assert!(!std::path::Path::new(&path).exists());
     std::fs::remove_file(&not_object).ok();
+}
+
+#[test]
+fn settings_come_from_several_files_that_may_not_share_a_key() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 20}));
+    let printer = out("printer.json");
+    let process = out("process.json");
+    std::fs::write(&printer, r#"{"gcode_flavor": "klipper", "printable_height": 100}"#).unwrap();
+    std::fs::write(&process, r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "no_such_setting": true}"#).unwrap();
+    let path = out("files.gcode");
+    let r = run(&mut s, "print.slice", json!({"path": path, "config": [printer, process]}));
+    assert_eq!(r["layers"], 100, "{r}");
+    assert_eq!(r["ignored"], json!(["no_such_setting"]), "{r}");
+    assert_eq!(r["refused"], json!([]), "{r}");
+    // A value the slicer cannot use is reported, not fatal.
+    let r = run(&mut s, "print.slice", json!({"path": path, "config": [printer, process], "settings": {"support_object_xy_distance": "50%"}}));
+    assert_eq!(r["refused"][0]["key"], "support_object_xy_distance", "{r}");
+    // The same key in two files is an error, so a key always has one home.
+    let twice = out("twice.json");
+    std::fs::write(&twice, r#"{"layer_height": 0.3}"#).unwrap();
+    let r = s.execute("print.slice", &json!({"path": path, "config": [printer, process, twice]}));
+    assert!(r.is_err(), "{r:?}");
+    // A part taller than the printer is refused and nothing is written.
+    std::fs::remove_file(&path).ok();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 150, "center": [50, 0, 0]}));
+    let r = s.execute("print.slice", &json!({"path": path, "config": [printer, process]}));
+    assert!(r.is_err(), "{r:?}");
+    assert!(!std::path::Path::new(&path).exists());
+    for f in [printer, process, twice] {
+        std::fs::remove_file(f).ok();
+    }
 }
