@@ -1082,6 +1082,7 @@
   "cmd.render.result.discard": "丢弃渲染结果",
   "cmd.render.result.select": "选择渲染结果",
   "cmd.render_aging_describe": "分层表面老化",
+  "cmd.print.slice": "为3D打印切片",
   "cmd.render_backends": "渲染后端",
   "cmd.render_batch": "渲染所有镜头",
   "cmd.render_camera_fit": "为渲染主体取景",

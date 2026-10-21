@@ -4218,6 +4218,7 @@ dependencies = [
  "solidcraft-geom",
  "solidcraft-io",
  "solidcraft-kernel",
+ "solidcraft-manufacture",
  "solidcraft-profile",
  "solidcraft-render",
  "solidcraft-sketch",

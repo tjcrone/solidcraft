@@ -1082,6 +1082,7 @@
   "cmd.render.result.discard": "レンダリング結果を破棄",
   "cmd.render.result.select": "レンダリング結果を選択",
   "cmd.render_aging_describe": "レイヤー式表面エイジング",
+  "cmd.print.slice": "3Dプリント用にスライス",
   "cmd.render_backends": "レンダリング バックエンド",
   "cmd.render_batch": "すべてのショットをレンダリング",
   "cmd.render_camera_fit": "レンダー対象をフレームに合わせる",
