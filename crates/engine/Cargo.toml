@@ -58,6 +58,7 @@ solidcraft-io = { workspace = true }
 # Palette-role SVG validation shared with the UI icon renderer.
 solidcraft-icon-svg = { workspace = true }
 solidcraft-render = { workspace = true }
+solidcraft-manufacture = { workspace = true }
 solidcraft-profile = { workspace = true }
 solidcraft-ui-text = { workspace = true }
 # the app-neutral panel placement core (engine::panels re-exports it)

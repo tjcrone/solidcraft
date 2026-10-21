@@ -229,6 +229,7 @@ mod panels;
 mod parameter_sweep;
 mod parameters;
 mod plastic;
+mod print;
 mod print_face;
 mod remove_history;
 mod render;
@@ -729,6 +730,7 @@ fn gather_command_specs() -> Vec<&'static CommandSpec> {
     v.extend(settings::COMMANDS.iter());
     v.extend(diagnostics::COMMANDS.iter());
     v.extend(drawing_ui::COMMANDS.iter());
+    v.extend(print::COMMANDS.iter());
     v.extend(render::COMMANDS.iter());
     v.extend(render_ui::COMMANDS.iter());
     v
