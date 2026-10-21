@@ -8,6 +8,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod reach;
 mod sx;
 
 pub use sx::SxSlicer;
@@ -27,6 +28,9 @@ pub enum Error {
     Slice(String),
     #[error("writing G-code: {0}")]
     Gcode(String),
+    /// The toolpaths or the finished file would run outside the printer's volume; nothing is written.
+    #[error("refused, the print would run outside the printer's reach: {0}")]
+    Unsafe(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -68,6 +72,25 @@ pub struct Job<'a> {
     pub config: &'a str,
 }
 
+/// A setting the engine could not use: the setting kept its default.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Refused {
+    pub key: String,
+    /// The value as JSON text.
+    pub value: String,
+    pub reason: String,
+}
+
+/// What the engine had to say about the settings and the slice; none of it stopped the job.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Report {
+    pub refused: Vec<Refused>,
+    /// Setting keys this engine never reads, sorted.
+    pub ignored: Vec<String>,
+    /// Settings lowered to the machine's limits, toolpath findings, and the engine's own warnings.
+    pub warnings: Vec<String>,
+}
+
 /// A finished slice: the G-code and what the engine estimated for it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sliced {
@@ -78,6 +101,7 @@ pub struct Sliced {
     /// Filament over every slot, millimetres and grams.
     pub filament_mm: f64,
     pub filament_g: f64,
+    pub report: Report,
 }
 
 /// A slicing engine. One job in, one G-code file out; no state between calls.
