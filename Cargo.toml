@@ -44,6 +44,7 @@ solidcraft-control = { path = "crates/control" }
 solidcraft-control-egui = { path = "crates/control-egui" }
 solidcraft-derive = { path = "crates/derive" }
 solidcraft-3dx-client = { path = "crates/threedx-client" }
+solidcraft-manufacture = { path = "crates/manufacture" }
 # The Rust port of NVIDIA's SMLib (Apache-2.0), the B-rep kernel behind crates/smlib. Vendored with
 # `git subtree` at solidcore: that tree is the source of truth, and
 # .github/workflows/solidcore-mirror.yml pushes changes in it back to its own repository (#13153).
@@ -82,6 +83,12 @@ spade = { version = "2.15", default-features = false, features = ["std"] }
 rayon = "1.12"
 # Native render-memory admission; RAM-only queries through a safe MIT-licensed API.
 sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
+
+# slicing engine for 3D printing (Apache-2.0): SlicerX's sx-core, which is not on crates.io, pinned to
+# its engine release tag. Only crates/manufacture uses it. Default features off: `import` and
+# `sleipnir` would pull in sx-geom, and `parallel` (rayon) is turned on by crates/manufacture for
+# native builds only.
+sx-core = { git = "https://github.com/slicerx-oss/slicerx", tag = "engine-v0.1.9", default-features = false }
 
 # packages (3MF)
 zip = { version = "9", default-features = false, features = ["deflate"] }
