@@ -81,6 +81,7 @@ mod kernel_heal_tests;
 mod parameter_sweep;
 mod parameters;
 mod plastic;
+mod print;
 mod print_face;
 mod render;
 mod render_ui;
@@ -351,6 +352,7 @@ pub fn command_specs() -> Vec<&'static CommandSpec> {
     v.extend(view_dxf::COMMANDS.iter());
     v.extend(settings::COMMANDS.iter());
     v.extend(diagnostics::COMMANDS.iter());
+    v.extend(print::COMMANDS.iter());
     v.extend(render::COMMANDS.iter());
     v.extend(render_ui::COMMANDS.iter());
     v

@@ -1033,6 +1033,7 @@
   "cmd.pointcloud_insert": "Insert Point Cloud",
   "cmd.pointcloud_list": "Point Clouds",
   "cmd.render_aging_describe": "Layered Surface Aging",
+  "cmd.print.slice": "Slice for Printing",
   "cmd.render_backends": "Render Backends",
   "cmd.render_batch": "Render All Shots",
   "cmd.render_camera_fit": "Frame Render Subject",
