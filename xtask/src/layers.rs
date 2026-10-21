@@ -38,6 +38,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("geom", Class::Layer(0)),
     // 3D mouse descriptors and reports (no workspace dependencies; the apps read the device)
     ("space-mouse", Class::Layer(0)),
+    // slicing for 3D printing (no workspace dependencies; the engine hands it meshes)
+    ("manufacture", Class::Layer(0)),
     // the derive macros (proc-macro, no workspace dependencies)
     ("derive", Class::Standalone),
     // the 3Dconnexion driver's client API on macOS (no workspace dependencies)

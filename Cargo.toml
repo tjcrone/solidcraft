@@ -28,6 +28,7 @@ solidcraft-space-mouse = { path = "crates/space-mouse" }
 solidcraft-mcp = { path = "crates/mcp" }
 solidcraft-derive = { path = "crates/derive" }
 solidcraft-3dx-client = { path = "crates/threedx-client" }
+solidcraft-manufacture = { path = "crates/manufacture" }
 
 # foundation
 thiserror = "2"
@@ -55,6 +56,12 @@ truck-topology = "0.6"
 # tree through truck-meshalgo.
 spade = { version = "2.15", default-features = false, features = ["std"] }
 rayon = "1.12"
+
+# slicing engine for 3D printing (Apache-2.0): SlicerX's sx-core, which is not on crates.io, pinned to
+# its engine release tag. Only crates/manufacture uses it. Default features off: `import` and
+# `sleipnir` would pull in sx-geom, and `parallel` (rayon) is turned on by crates/manufacture for
+# native builds only.
+sx-core = { git = "https://github.com/slicerx-oss/slicerx", tag = "engine-v0.1.9", default-features = false }
 
 # packages (3MF)
 zip = { version = "9", default-features = false, features = ["deflate"] }

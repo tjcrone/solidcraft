@@ -196,6 +196,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arboard"
 version = "3.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -617,7 +626,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.11.0",
- "sha2 0.11.1",
+ "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -676,7 +685,7 @@ dependencies = [
  "serde",
  "serde-value",
  "serde_json",
- "sha2 0.11.1",
+ "sha2 0.11.0",
  "thiserror 2.0.21",
 ]
 
@@ -795,7 +804,7 @@ version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a98d30140e3296250832bbaaff83b27dcd6fa3cc70fb6f1f3e5c9c0023b5317"
 dependencies = [
- "approx",
+ "approx 0.4.0",
  "num-traits",
  "serde",
 ]
@@ -1982,6 +1991,36 @@ checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
 dependencies = [
  "typenum",
 ]
+
+[[package]]
+name = "i_float"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ecaff1ce29bcacd72cdf581ba6fce636ef4c4e0b2da7e7846dd0137d98141e2"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "i_key_sort"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c6c58d0c60705e66264ce0f788a69a2f21472aeb8188559e7c8c619dbdc10fa"
+
+[[package]]
+name = "i_shape"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa1878f91ef7921feaf1b2346253ebc5e661878b22d5715195c1d5dcf0f20ae5"
+dependencies = [
+ "i_float",
+]
+
+[[package]]
+name = "i_tree"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "180cbc5c4af5d8f57b8096c3cf39efdac3642ece00ca54710db44db3536baed4"
 
 [[package]]
 name = "iana-time-zone"
@@ -4047,9 +4086,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.1"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
+checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
@@ -4380,6 +4419,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solidcraft-manufacture"
+version = "0.22.0"
+dependencies = [
+ "sx-core",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "solidcraft-mcp"
 version = "0.28.0"
 dependencies = [
@@ -4514,6 +4561,58 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "sx-boostvoronoi"
+version = "0.12.1"
+source = "git+https://github.com/slicerx-oss/slicerx?tag=engine-v0.1.9#1541d8ad9a5a3ae17f703de931ccaf3a5df7eddc"
+dependencies = [
+ "approx 0.5.1",
+ "libm",
+ "num-traits",
+ "ordered-float 5.5.0",
+ "rustc-hash 2.1.3",
+ "smallvec",
+ "sx-cpp-map",
+ "thiserror 2.0.21",
+ "vob",
+]
+
+[[package]]
+name = "sx-core"
+version = "0.1.9"
+source = "git+https://github.com/slicerx-oss/slicerx?tag=engine-v0.1.9#1541d8ad9a5a3ae17f703de931ccaf3a5df7eddc"
+dependencies = [
+ "libm",
+ "miniz_oxide 0.9.1",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sx-boostvoronoi",
+ "sx-i-overlay",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "sx-cpp-map"
+version = "0.2.0"
+source = "git+https://github.com/slicerx-oss/slicerx?tag=engine-v0.1.9#1541d8ad9a5a3ae17f703de931ccaf3a5df7eddc"
+dependencies = [
+ "smallvec",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "sx-i-overlay"
+version = "9.0.0"
+source = "git+https://github.com/slicerx-oss/slicerx?tag=engine-v0.1.9#1541d8ad9a5a3ae17f703de931ccaf3a5df7eddc"
+dependencies = [
+ "i_float",
+ "i_key_sort",
+ "i_shape",
+ "i_tree",
+]
 
 [[package]]
 name = "syn"
@@ -5087,6 +5186,15 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vob"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc936b5a7202a703aeaf7ce05e7931db2e0c8126813f97db3e9e06d867b0bb38"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "vswhom"
