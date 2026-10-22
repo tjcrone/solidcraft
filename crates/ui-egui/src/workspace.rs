@@ -379,6 +379,7 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
     },
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
     Section { tab: "PRINT", panel: "SLICE", promoted: 2, ids: &["print.slice", "print.save"] },
+    Section { tab: "PRINT", panel: "PRINTER", promoted: 2, ids: &["print.upload", "print.cancel"] },
 ];
 
 /// Compact source labels for painted big buttons only. Menus, search and tooltips

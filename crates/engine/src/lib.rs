@@ -24,6 +24,7 @@ pub mod licences;
 pub mod occurrences;
 pub mod panels;
 pub mod params;
+pub mod printer_host;
 pub mod product_scene;
 pub mod recovery;
 pub mod render_jobs;
@@ -620,6 +621,8 @@ pub struct Session {
     render_jobs: render_jobs::Jobs,
     /// The last `print.slice` of this session (`held_slice`).
     print_slice: Option<Arc<held_slice::HeldSlice>>,
+    /// The printer the application installed (`printer_host`).
+    printer_host: Option<Arc<dyn printer_host::PrinterHost>>,
     /// The visibility the design file holds (what `is_dirty` compares with).
     saved_visibility: Visibility,
     /// States to go back to (`edit.checkpoint`, `edit.restore_checkpoint`): how batches of
@@ -874,6 +877,7 @@ impl Session {
             render_viewport: None,
             render_jobs: Default::default(),
             print_slice: None,
+            printer_host: None,
             #[cfg(test)]
             evaluations: 0,
             motion_traces: Default::default(),
@@ -901,6 +905,7 @@ impl Session {
         let easyprint_upload = self.easyprint_upload.take();
         let render_viewport = self.render_viewport.clone();
         let render_jobs = self.render_jobs.scratch();
+        let printer_host = self.printer_host.clone();
         let checkpoints = std::mem::take(&mut self.checkpoints);
         let next_checkpoint = self.next_checkpoint;
         // The design on screen stays journaled for crash reports at once, not from the app's
@@ -920,6 +925,7 @@ impl Session {
         self.easyprint_upload = easyprint_upload;
         self.render_viewport = render_viewport;
         self.render_jobs = render_jobs;
+        self.printer_host = printer_host;
         self.checkpoints = checkpoints;
         self.next_checkpoint = next_checkpoint;
         self.replacements = replacements;
@@ -1974,6 +1980,7 @@ impl Session {
             render_viewport: self.render_viewport.clone(),
             render_jobs: self.render_jobs.scratch(),
             print_slice: self.print_slice.clone(),
+            printer_host: self.printer_host.clone(),
             saved_visibility: self.saved_visibility.clone(),
             #[cfg(test)]
             evaluations: 0,
