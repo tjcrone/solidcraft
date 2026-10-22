@@ -81,8 +81,9 @@ impl Default for State {
     }
 }
 
+/// The Print workspace is showing: its Print tab or its Printer tab.
 pub fn active(app: &SolveApp) -> bool {
-    app.ui.tab == "PRINT"
+    app.ui.tab == "PRINT" || app.ui.tab == "PRINTER"
 }
 
 /// The colour a feature's beads are drawn in (straight sRGB). Built in OKLCH with the lightness
@@ -128,6 +129,7 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
     }
     app.cancel_view_animation();
     sync_view(app);
+    crate::printer_dashboard::sync_camera(app);
     Ok(())
 }
 
@@ -274,7 +276,7 @@ pub fn cancel_print(app: &mut SolveApp) {
 }
 
 /// The printer's state as the panel words it.
-fn state_label(app: &SolveApp, state: &str) -> String {
+pub(crate) fn state_label(app: &SolveApp, state: &str) -> String {
     let key = match state {
         "standby" => "print.state_standby",
         "printing" => "print.state_printing",
@@ -616,6 +618,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::viewport::refresh_layout(app, ui.ctx().pixels_per_point());
     let response = ui.interact(rect, ui.id().with("print_preview"), Sense::click_and_drag());
     sync_view(app);
+    crate::printer_dashboard::sync_camera(app);
     crate::navigation::handle(app, ui, rect, &response, crate::navigation::NavCaps::RENDER);
     let t = Tokens::get();
     ui.painter().rect_filled(rect, 0.0, t.viewport_bottom);

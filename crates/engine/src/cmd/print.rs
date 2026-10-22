@@ -20,6 +20,13 @@ const UPLOAD: &str = "print.upload";
 const JOB: &str = "print.job";
 const STATUS: &str = "print.status";
 const CANCEL: &str = "print.cancel";
+const PAUSE: &str = "print.pause";
+const RESUME: &str = "print.resume";
+const HEAT: &str = "print.heat";
+const WEBCAMS: &str = "print.webcams";
+/// Most degrees a nozzle or bed may be asked for.
+const MAX_NOZZLE_C: f64 = 350.0;
+const MAX_BED_C: f64 = 150.0;
 
 /// Most points one `print.preview` answer carries for a layer, so a reply stays a reply.
 const MAX_PREVIEW_POINTS: usize = 2_000_000;
@@ -46,7 +53,63 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("PRINT", "PRINTER").icon("stop").params(
         "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
     ),
+    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("PRINTER", "PRINT").icon("pause").params(
+        "No parameters → job. Asks the printer to pause the running print (Klipper's PAUSE); print.job reports the answer",
+    ),
+    CommandSpec::new(RESUME, "Resume Print", resume).noundo().doc_only().at("PRINTER", "PRINT").icon("play").params(
+        "No parameters → job. Asks the printer to resume a paused print (Klipper's RESUME); print.job reports the answer",
+    ),
+    CommandSpec::new(HEAT, "Set Temperatures", heat).noundo().doc_only().icon("settings").params(
+        "nozzle?: °C (0 turns the heater off, at most 350); bed?: °C (at most 150); at least one → jobs: [ids]. Sends M104 and M140 to the printer; print.job reports each answer",
+    ),
+    CommandSpec::new(WEBCAMS, "Printer Cameras", webcams).noundo().doc_only().icon("list").params(
+        "No parameters → webcams: [{name, stream_url, snapshot_url, enabled, rotation, flip_horizontal, flip_vertical}], as the printer lists them",
+    ),
 ];
+
+fn pause(s: &mut Session, _p: &Value) -> Result<Value> {
+    let job = host(s, PAUSE)?.script("PAUSE").map_err(|e| EngineError::Other(format!("{PAUSE}: {e}")))?;
+    Ok(json!({"job": job}))
+}
+
+fn resume(s: &mut Session, _p: &Value) -> Result<Value> {
+    let job = host(s, RESUME)?.script("RESUME").map_err(|e| EngineError::Other(format!("{RESUME}: {e}")))?;
+    Ok(json!({"job": job}))
+}
+
+fn heat(s: &mut Session, p: &Value) -> Result<Value> {
+    let degrees = |key: &str, most: f64| -> Result<Option<f64>> {
+        match p.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => {
+                let t = v.as_f64().filter(|t| t.is_finite()).ok_or_else(|| bad(HEAT, format!("`{key}` must be a number of degrees")))?;
+                if !(0.0..=most).contains(&t) {
+                    return Err(bad(HEAT, format!("`{key}` must be between 0 and {most} °C")));
+                }
+                Ok(Some(t))
+            }
+        }
+    };
+    let nozzle = degrees("nozzle", MAX_NOZZLE_C)?;
+    let bed = degrees("bed", MAX_BED_C)?;
+    if nozzle.is_none() && bed.is_none() {
+        return Err(bad(HEAT, "give `nozzle` and/or `bed` in °C"));
+    }
+    let host = host(s, HEAT)?;
+    let mut jobs = Vec::new();
+    if let Some(t) = nozzle {
+        jobs.push(host.script(&format!("M104 S{t:.0}")).map_err(|e| EngineError::Other(format!("{HEAT}: {e}")))?);
+    }
+    if let Some(t) = bed {
+        jobs.push(host.script(&format!("M140 S{t:.0}")).map_err(|e| EngineError::Other(format!("{HEAT}: {e}")))?);
+    }
+    Ok(json!({"jobs": jobs}))
+}
+
+fn webcams(s: &mut Session, _p: &Value) -> Result<Value> {
+    let list = host(s, WEBCAMS)?.webcams();
+    Ok(json!({"webcams": list}))
+}
 
 fn host<'a>(s: &'a Session, cmd: &str) -> Result<&'a std::sync::Arc<dyn crate::printer_host::PrinterHost>> {
     s.printer_host().ok_or_else(|| bad(cmd, "no printer is set up"))

@@ -380,6 +380,7 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
     Section { tab: "PRINT", panel: "SLICE", promoted: 2, ids: &["print.slice", "print.save"] },
     Section { tab: "PRINT", panel: "PRINTER", promoted: 2, ids: &["print.upload", "print.cancel"] },
+    Section { tab: "PRINTER", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
 ];
 
 /// Compact source labels for painted big buttons only. Menus, search and tooltips
@@ -672,7 +673,7 @@ pub fn visible_tabs(app: &crate::SolveApp) -> Vec<&'static str> {
         return Vec::new();
     }
     if crate::print_workspace::active(app) {
-        return vec!["PRINT"];
+        return vec!["PRINT", "PRINTER"];
     }
     let mut tabs: Vec<_> = TABS.iter().copied().filter(|tab| tab_turned_on(app, tab)).collect();
     if app.preferences.sketch_tab_always {
