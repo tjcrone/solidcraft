@@ -142,6 +142,9 @@ fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_wal
     // Travels run between consecutive paths of a layer.
     let l = &paths.layers[50];
     assert_eq!(l.travels().count(), l.paths.len() - 1);
+    // The default printer: a 256 mm bed, 250 mm tall.
+    assert_eq!(sliced.bed, [0.0, 0.0, 256.0, 256.0]);
+    assert_eq!(sliced.printable_height, 250.0);
 }
 
 #[test]
