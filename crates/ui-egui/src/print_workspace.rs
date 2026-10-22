@@ -70,31 +70,32 @@ pub fn active(app: &SolveApp) -> bool {
     app.ui.tab == "PRINT"
 }
 
-/// The colour a feature's beads are drawn in (straight sRGB), one per feature, chosen for the
-/// walls, surfaces and infill to tell apart at a glance in both themes.
+/// The colour a feature's beads are drawn in (straight sRGB). Built in OKLCH with the lightness
+/// near 0.7 and the chroma near 0.1 for every feature, so the walls, surfaces and infill tell
+/// apart by hue without any of them shouting; greys for support, near-white for gap fill.
 pub fn feature_color(feature: Option<Feature>) -> [u8; 4] {
     match feature {
-        Some(Feature::OuterWall) => [0xff, 0x5f, 0x1f, 255],
-        Some(Feature::InnerWall) => [0xff, 0xd2, 0x1f, 255],
-        Some(Feature::OverhangWall) => [0x1f, 0x6f, 0xff, 255],
-        Some(Feature::TopSurface) => [0xff, 0x3b, 0x6b, 255],
-        Some(Feature::BottomSurface) => [0xc9, 0x4b, 0xff, 255],
-        Some(Feature::InternalSolid) => [0xb2, 0x3c, 0x3c, 255],
-        Some(Feature::SparseInfill) => [0x3c, 0xb3, 0x71, 255],
-        Some(Feature::Bridge) => [0x4a, 0xc0, 0xe0, 255],
-        Some(Feature::InternalBridge) => [0x2f, 0x8e, 0xa8, 255],
-        Some(Feature::Support) => [0xb4, 0xb4, 0xb4, 255],
-        Some(Feature::SupportInterface) => [0x6e, 0x6e, 0x6e, 255],
-        Some(Feature::Brim) => [0xe8, 0xc8, 0x9a, 255],
-        Some(Feature::Skirt) => [0xa8, 0xd8, 0xa8, 255],
-        Some(Feature::Ironing) => [0xff, 0x9a, 0xd5, 255],
-        Some(Feature::GapFill) => [0xf4, 0xf4, 0xf4, 255],
-        Some(Feature::PrimeTower) => [0xa0, 0xa0, 0xff, 255],
-        Some(Feature::Custom) | None => [0xcc, 0xcc, 0x66, 255],
+        Some(Feature::OuterWall) => [0xe0, 0x82, 0x56, 255],
+        Some(Feature::InnerWall) => [0xd5, 0xb4, 0x55, 255],
+        Some(Feature::OverhangWall) => [0x5a, 0x86, 0xce, 255],
+        Some(Feature::TopSurface) => [0xd5, 0x6e, 0x78, 255],
+        Some(Feature::BottomSurface) => [0x9f, 0x71, 0xb4, 255],
+        Some(Feature::InternalSolid) => [0x9a, 0x50, 0x4b, 255],
+        Some(Feature::SparseInfill) => [0x63, 0xab, 0x74, 255],
+        Some(Feature::Bridge) => [0x4d, 0xb4, 0xcc, 255],
+        Some(Feature::InternalBridge) => [0x34, 0x89, 0x8d, 255],
+        Some(Feature::Support) => [0xab, 0xab, 0xab, 255],
+        Some(Feature::SupportInterface) => [0x7a, 0x7a, 0x7a, 255],
+        Some(Feature::Brim) => [0xcf, 0xbb, 0x9a, 255],
+        Some(Feature::Skirt) => [0xa3, 0xc8, 0xb3, 255],
+        Some(Feature::Ironing) => [0xd7, 0x93, 0xb3, 255],
+        Some(Feature::GapFill) => [0xd7, 0xd7, 0xd7, 255],
+        Some(Feature::PrimeTower) => [0x9f, 0x9f, 0xcf, 255],
+        Some(Feature::Custom) | None => [0x97, 0x9e, 0x6c, 255],
     }
 }
 
-const TRAVEL_COLOR: [u8; 4] = [0x40, 0x80, 0xff, 160];
+const TRAVEL_COLOR: [u8; 4] = [0x6a, 0x8f, 0xd0, 160];
 
 /// Enter (`on`) or leave the workspace. Entering keeps the Design camera to restore on return.
 pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
