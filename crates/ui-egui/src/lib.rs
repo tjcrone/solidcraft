@@ -441,6 +441,9 @@ pub struct Services {
     pub http_get: Option<update::HttpGet>,
     /// HTTPS download to a file, with progress, for one-click updates (`update::install`).
     pub http_download: Option<update::install::HttpDownload>,
+    /// A printer host for a Moonraker address, for the Print workspace; None: no printer support
+    /// (the browser build).
+    pub printer_host: Option<print_workspace::MakePrinterHost>,
     /// The browser's offer to install the web app (`install`); None: no Install button (desktop).
     pub install_app: Option<install::InstallApp>,
     /// Hand a design's bytes to the user as a downloaded file (name, bytes); the browser build's
@@ -1628,7 +1631,7 @@ impl SolveApp {
             return;
         }
         // Print's commands take their settings from the Print workspace, not a dialog.
-        if matches!(id, "print.slice" | "print.save") {
+        if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel") {
             print_workspace::start(self, id);
             return;
         }

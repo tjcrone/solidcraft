@@ -9,12 +9,17 @@ use solidcraft_manufacture::{Job, MAX_CONFIG_BYTES, Part, Slicer, Toolpaths};
 
 use super::CommandSpec;
 use crate::held_slice::HeldSlice;
-use crate::params::{bad, str_, string_list};
+use crate::params::{bad, bool_, str_, string_list};
+use crate::printer_host::gcode_file_name;
 use crate::{EngineError, Result, Session};
 
 const SLICE: &str = "print.slice";
 const PREVIEW: &str = "print.preview";
 const SAVE: &str = "print.save";
+const UPLOAD: &str = "print.upload";
+const JOB: &str = "print.job";
+const STATUS: &str = "print.status";
+const CANCEL: &str = "print.cancel";
 
 /// Most points one `print.preview` answer carries for a layer, so a reply stays a reply.
 const MAX_PREVIEW_POINTS: usize = 2_000_000;
@@ -29,7 +34,68 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("PRINT", "SLICE").icon("export").params(
         "path: the .gcode file to write with the G-code of the session's last print.slice → path, bytes, stale (the design changed since the slice)",
     ),
+    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().at("PRINT", "PRINTER").icon("send").params(
+        "name?: the file name on the printer (default: the design's name; always ends in .gcode); start?: bool (print it at once; default false) → job, name, bytes, start. Sends the session's last print.slice to the installed printer in the background; print.job reports progress. Refused while the design has changed since the slice, and without a printer",
+    ),
+    CommandSpec::new(JOB, "Printer Job", job).noundo().doc_only().icon("list").params(
+        "job: id from print.upload or print.cancel → job, state: queued | running (sent, total) | done (message, started) | failed (message)",
+    ),
+    CommandSpec::new(STATUS, "Printer Status", status).noundo().doc_only().icon("inspect").params(
+        "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message. Never waits on the network: the host's latest answer",
+    ),
+    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("PRINT", "PRINTER").icon("stop").params(
+        "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
+    ),
 ];
+
+fn host<'a>(s: &'a Session, cmd: &str) -> Result<&'a std::sync::Arc<dyn crate::printer_host::PrinterHost>> {
+    s.printer_host().ok_or_else(|| bad(cmd, "no printer is set up"))
+}
+
+fn upload(s: &mut Session, p: &Value) -> Result<Value> {
+    let held = held(s, UPLOAD)?;
+    if held.stale(&s.doc) {
+        return Err(bad(UPLOAD, "the design changed since the last slice; slice it again before uploading"));
+    }
+    let start = bool_(p, "start").unwrap_or(false);
+    let name = match p.get("name") {
+        None | Some(Value::Null) => gcode_file_name(&s.doc.name),
+        Some(Value::String(n)) => gcode_file_name(n),
+        Some(_) => return Err(bad(UPLOAD, "`name` must be a file name")),
+    };
+    let bytes = held.sliced.gcode.len();
+    let gcode = held.sliced.gcode.clone();
+    let job = host(s, UPLOAD)?.upload(&name, gcode, start).map_err(|e| EngineError::Other(format!("{UPLOAD}: {e}")))?;
+    Ok(json!({"job": job, "name": name, "bytes": bytes, "start": start}))
+}
+
+fn job(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = p.get("job").and_then(Value::as_u64).ok_or_else(|| bad(JOB, "`job` is required"))?;
+    let state = host(s, JOB)?.job(id).ok_or_else(|| bad(JOB, format!("no job {id}")))?;
+    let mut out = serde_json::to_value(&state).unwrap_or(Value::Null);
+    if let Value::Object(map) = &mut out {
+        map.insert("job".into(), json!(id));
+        map.insert("finished".into(), json!(state.finished()));
+    }
+    Ok(out)
+}
+
+fn status(s: &mut Session, _p: &Value) -> Result<Value> {
+    let Some(host) = s.printer_host() else {
+        return Ok(json!({"installed": false, "reachable": false, "state": "", "error": "no printer is set up"}));
+    };
+    let mut out = serde_json::to_value(host.status()).unwrap_or(Value::Null);
+    if let Value::Object(map) = &mut out {
+        map.insert("installed".into(), json!(true));
+        map.insert("printer".into(), serde_json::to_value(host.info()).unwrap_or(Value::Null));
+    }
+    Ok(out)
+}
+
+fn cancel(s: &mut Session, _p: &Value) -> Result<Value> {
+    let job = host(s, CANCEL)?.cancel_print().map_err(|e| EngineError::Other(format!("{CANCEL}: {e}")))?;
+    Ok(json!({"job": job}))
+}
 
 fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     let path = match p.get("path") {
