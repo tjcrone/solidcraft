@@ -10,8 +10,10 @@
 
 pub mod reach;
 mod sx;
+pub mod toolpaths;
 
 pub use sx::SxSlicer;
+pub use toolpaths::{Feature, Layer, Path, Toolpaths};
 
 /// Most triangles one job may carry: a design that tessellates past this is refused, not sliced.
 pub const MAX_TRIANGLES: usize = 50_000_000;
@@ -102,6 +104,8 @@ pub struct Sliced {
     pub filament_mm: f64,
     pub filament_g: f64,
     pub report: Report,
+    /// The paths the G-code was written from, for a layer preview.
+    pub toolpaths: Toolpaths,
 }
 
 /// A slicing engine. One job in, one G-code file out; no state between calls.

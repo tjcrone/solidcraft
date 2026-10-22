@@ -31,6 +31,7 @@ pub mod frames;
 pub mod fuzz;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gpg;
+pub mod held_slice;
 pub mod licences;
 mod mesh_lines;
 pub mod occurrences;
@@ -814,6 +815,8 @@ pub struct Session {
     /// The sheet scenes of the drawing open, for the sheet page ([`drawing_scene::extract`]): view
     /// state, never saved or an undo step, dropped when the drawing closes.
     pub(crate) drawing_scenes: drawing_scene::Cache,
+    /// The last `print.slice` of this session (`held_slice`).
+    print_slice: Option<Arc<held_slice::HeldSlice>>,
     /// The visibility the design file holds (what `is_dirty` compares with).
     saved_visibility: Visibility,
     /// The design as `doc.open` made it from a STEP, IGES or mesh file, never saved yet: while it
@@ -1174,6 +1177,7 @@ impl Session {
             render_jobs: Default::default(),
             dimension_values: Default::default(),
             drawing_scenes: Default::default(),
+            print_slice: None,
             evaluations: 0,
             motion_traces: Default::default(),
             command_check: None,
@@ -2808,6 +2812,7 @@ impl Session {
             // The open drawing's lines are the sheet page's: a copy for an export takes them
             // (`scratch_as_shown`), the many others never read them.
             drawing_scenes: Default::default(),
+            print_slice: self.print_slice.clone(),
             saved_visibility: self.saved_visibility.clone(),
             dimension_values: self.dimension_values.clone(),
             opened_import: self.opened_import.clone(),
