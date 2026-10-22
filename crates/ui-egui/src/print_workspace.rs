@@ -11,7 +11,6 @@ use serde_json::json;
 use solidcraft_engine::geom::{Aabb3, Vec3};
 use solidcraft_engine::held_slice::HeldSlice;
 use solidcraft_engine::manufacture::{Feature, Layer, Toolpaths};
-use solidcraft_engine::render::Camera;
 
 use crate::gpu::{Frame, GpuScene, SceneSlot, ViewportCallback};
 use crate::ui_kit::{Container, Edge, Surface};
@@ -34,7 +33,8 @@ pub struct Settings {
 pub struct State {
     pub settings: Settings,
     settings_loaded: bool,
-    design_camera: Option<(Camera, bool)>,
+    /// The placement offset the camera target currently carries (`sync_view`).
+    view_offset: [f32; 3],
     /// The highest layer shown, as an index; `None` shows every layer.
     pub top_layer: Option<usize>,
     pub show_travels: bool,
@@ -56,7 +56,7 @@ impl Default for State {
         Self {
             settings: Settings::default(),
             settings_loaded: false,
-            design_camera: None,
+            view_offset: [0.0; 3],
             top_layer: None,
             show_travels: false,
             slot: Arc::new(Mutex::new(None)),
@@ -97,7 +97,8 @@ pub fn feature_color(feature: Option<Feature>) -> [u8; 4] {
 
 const TRAVEL_COLOR: [u8; 4] = [0x6a, 0x8f, 0xd0, 160];
 
-/// Enter (`on`) or leave the workspace. Entering keeps the Design camera to restore on return.
+/// Enter (`on`) or leave the workspace. The view does not jump: Print shows the part where the
+/// slicer put it on the bed, and the camera target moves by that placement with it (`sync_view`).
 pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
     if on {
         if app.session.active_sketch.is_some() || app.tool.is_some() || app.dialog.is_some() || app.file_load.busy() {
@@ -106,23 +107,55 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
         if crate::render_workspace::active(app) {
             crate::render_workspace::enter(app, false)?;
         }
-        if !active(app) {
-            app.print_workspace.design_camera = Some((app.cam, app.ui.perspective));
-            app.ui.tab = "PRINT".into();
-            if let Some(b) = bounds(app) {
-                app.cam.fit(&b);
-            }
-        }
+        app.ui.tab = "PRINT".into();
     } else if active(app) {
-        if let Some((camera, perspective)) = app.print_workspace.design_camera.take() {
-            app.cam = camera;
-            app.ui.up_axis = camera.up;
-            app.ui.perspective = perspective;
-        }
         app.ui.tab = "MODEL".into();
     }
     app.cancel_view_animation();
+    sync_view(app);
     Ok(())
+}
+
+/// The placement the view should carry now: the held slice's offset while Print shows it, else
+/// none. The camera target follows any change, so the part stays where it was on screen when
+/// the workspace changes or a new slice lands elsewhere on the bed.
+pub fn sync_view(app: &mut SolveApp) {
+    let wanted = match app.session.print_slice() {
+        Some(held) if active(app) => held.sliced.offset,
+        _ => [0.0; 3],
+    };
+    let applied = app.print_workspace.view_offset;
+    if wanted != applied {
+        let d = view_shift(applied, wanted);
+        app.cam.target += d;
+        app.print_workspace.view_offset = wanted;
+    }
+}
+
+/// What the camera target moves by when the carried placement goes from `applied` to `wanted`.
+fn view_shift(applied: [f32; 3], wanted: [f32; 3]) -> Vec3 {
+    Vec3::new(f64::from(wanted[0] - applied[0]), f64::from(wanted[1] - applied[1]), f64::from(wanted[2] - applied[2]))
+}
+
+/// Up and Down step through the layers (Shift: ten at a time) while a slice is shown; the other
+/// view keys keep their meaning. Returns whether the key was taken.
+pub fn layer_key(app: &mut SolveApp, key: egui::Key, mods: egui::Modifiers) -> bool {
+    if !active(app) || mods.command || mods.ctrl || mods.alt {
+        return false;
+    }
+    let step: i64 = match key {
+        egui::Key::ArrowUp => 1,
+        egui::Key::ArrowDown => -1,
+        _ => return false,
+    } * if mods.shift { 10 } else { 1 };
+    let Some(held) = app.session.print_slice() else { return false };
+    let n = held.sliced.toolpaths.layers.len();
+    if n == 0 {
+        return false;
+    }
+    let shown = (shown_layer(app, n) as i64 + step).clamp(1, n as i64) as usize;
+    app.print_workspace.top_layer = (shown < n).then_some(shown - 1);
+    true
 }
 
 /// The workspace menu's choice: `design`, `render` or `print`.
@@ -147,6 +180,7 @@ pub fn switch(app: &mut SolveApp, workspace: &str) -> Result<(), String> {
 
 /// Another design opened: the view starts over, the settings files stay.
 pub fn reset_document(app: &mut SolveApp) {
+    app.print_workspace.view_offset = [0.0; 3];
     let settings = std::mem::take(&mut app.print_workspace.settings);
     let settings_loaded = app.print_workspace.settings_loaded;
     app.print_workspace = State { settings, settings_loaded, ..Default::default() };
@@ -189,9 +223,7 @@ pub fn slice(app: &mut SolveApp) {
             {
                 app.set_status(e, true);
             }
-            if let Some(b) = bounds(app) {
-                app.cam.fit(&b);
-            }
+            sync_view(app);
             let layers = v["layers"].as_u64().unwrap_or(0);
             let time = v["time_s"].as_f64().unwrap_or(0.0);
             app.set_status(format!("Sliced: {layers} layers, {}", hms(time)), false);
@@ -385,6 +417,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     app.viewport.rect = Some(rect);
     crate::viewport::refresh_layout(app, ui.ctx().pixels_per_point());
     let response = ui.interact(rect, ui.id().with("print_preview"), Sense::click_and_drag());
+    sync_view(app);
     crate::navigation::handle(app, ui, rect, &response, crate::navigation::NavCaps::RENDER);
     let t = Tokens::get();
     ui.painter().rect_filled(rect, 0.0, t.viewport_bottom);
@@ -504,7 +537,11 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
         return Ok(());
     }
     let scene = match app.session.print_slice().cloned() {
-        Some(held) => toolpath_scene(&held, app.print_workspace.show_travels)?,
+        Some(held) => {
+            let mut scene = toolpath_scene(&held, app.print_workspace.show_travels)?;
+            shell(app, &mut scene, held.sliced.offset);
+            scene
+        }
         None => model_scene(app)?,
     };
     if let Ok(mut slot) = app.print_workspace.slot.lock() {
@@ -514,6 +551,32 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
     app.print_workspace.uploaded = Some(source);
     Ok(())
 }
+
+/// A faint see-through shell of the whole design over the toolpaths, moved onto the bed by the
+/// slice's placement, so the layers below the slider still hint at the part above them.
+/// Reference geometry: the layer cut never removes it.
+fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
+    let Ok(scene) = solidcraft_engine::product_scene::extract(&app.session) else { return };
+    let t = Tokens::get();
+    let c = [t.text_dim.r(), t.text_dim.g(), t.text_dim.b(), SHELL_ALPHA];
+    let mut bytes = 0usize;
+    for body in &scene.meshes {
+        for triangle in &body.mesh.triangles {
+            bytes += TRI_BYTES;
+            if bytes > MAX_GEOMETRY_BYTES / 4 {
+                return;
+            }
+            let corners = triangle.map(|i| body.mesh.positions.get(i as usize).map(|p| p.to_f32()));
+            let [Some(a), Some(b), Some(d)] = corners else { continue };
+            for p in [a, b, d] {
+                gpu.guide_tri([p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]], c);
+            }
+        }
+    }
+}
+
+/// Opacity of the shell, 0 to 255.
+const SHELL_ALPHA: u8 = 24;
 
 /// The design's bodies in a neutral grey, with the bed as a grid when one is known.
 fn model_scene(app: &SolveApp) -> Result<GpuScene, String> {

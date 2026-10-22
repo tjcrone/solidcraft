@@ -135,6 +135,9 @@ fn the_session_holds_the_slice_for_preview_and_save_until_the_design_changes() {
     assert_eq!(p["stale"], false, "{p}");
     assert_eq!(p["layers"], 100);
     assert_eq!(p["bed"], json!([0.0, 0.0, 256.0, 256.0]), "{p}");
+    let offset: Vec<f64> = p["offset"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    assert_eq!(offset.len(), 3, "{p}");
+    assert!((offset[0] - 118.0).abs() < 1e-3 && (offset[1] - 118.0).abs() < 1e-3 && offset[2].abs() < 1e-6, "{p}");
     assert_eq!(p["z"].as_array().unwrap().len(), 100);
     assert!(p["features"].as_array().unwrap().iter().any(|f| f["feature"] == "outer_wall"), "{}", p["features"]);
     assert!(p.get("layer").is_none());

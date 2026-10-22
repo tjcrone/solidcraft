@@ -24,7 +24,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         "path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files'; bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written",
     ),
     CommandSpec::new(PREVIEW, "Preview Toolpaths", preview).noundo().doc_only().icon("inspect").params(
-        "layer?: index (0 = first) → stale (the design changed since the slice), slicer, layers, segments, time_s, filament_mm, filament_g, bed: [min_x, min_y, max_x, max_y], printable_height, bounds: {min: [x, y, z], max: [x, y, z]}, z: [top of each layer], features: [{feature, label, paths, length_mm}]; with layer: layer: {index, z, height, time_s, paths: [{feature, tool, width_mm, speed_mm_s, points: [[x, y], …]}]}. Needs a print.slice in this session",
+        "layer?: index (0 = first) → stale (the design changed since the slice), slicer, layers, segments, time_s, filament_mm, filament_g, bed: [min_x, min_y, max_x, max_y], printable_height, offset: [x, y, z] (plate coordinates = design coordinates + offset; the toolpaths, bounds and bed are plate coordinates, as the G-code is), bounds: {min: [x, y, z], max: [x, y, z]}, z: [top of each layer], features: [{feature, label, paths, length_mm}]; with layer: layer: {index, z, height, time_s, paths: [{feature, tool, width_mm, speed_mm_s, points: [[x, y], …]}]}. Needs a print.slice in this session",
     ),
     CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("PRINT", "SLICE").icon("export").params(
         "path: the .gcode file to write with the G-code of the session's last print.slice → path, bytes, stale (the design changed since the slice)",
@@ -94,6 +94,7 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
         "filament_g": held.sliced.filament_g,
         "bed": held.sliced.bed,
         "printable_height": held.sliced.printable_height,
+        "offset": held.sliced.offset,
         "bounds": bounds,
         "z": paths.layers.iter().map(|l| l.z).collect::<Vec<_>>(),
         "features": features,
