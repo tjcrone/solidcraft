@@ -7,6 +7,7 @@ use serde_json::Value;
 use sx_core::api::{self, Mesh, MeshPart, Plate, PrintConfig, SliceOptions};
 use sx_core::preflight;
 
+use crate::toolpaths::{Feature, Layer, Path, Toolpaths};
 use crate::{Error, Job, MAX_CONFIG_BYTES, Part, Refused, Report, Result, Sliced, Slicer};
 
 /// The engine release the workspace pins (`sx-core`'s `tag` in the root Cargo.toml); the crate
@@ -84,8 +85,60 @@ impl Slicer for SxSlicer {
             filament_mm: stats.filament_mm.iter().sum(),
             filament_g: stats.filament_g.iter().sum(),
             report,
+            toolpaths: toolpaths(&out),
         })
     }
+}
+
+/// The engine's toolpaths in millimetres: its points are integers in units of `1 / SCALE` mm.
+fn toolpaths(out: &api::SliceOutput) -> Toolpaths {
+    let mm = |v: i32| (f64::from(v) / sx_core::geom::SCALE) as f32;
+    let layers = out
+        .layers
+        .iter()
+        .map(|l| Layer {
+            z: l.z,
+            height: l.height,
+            time_s: l.time_s,
+            paths: l
+                .paths
+                .iter()
+                .filter_map(|p| {
+                    let points: Vec<[f32; 2]> = l.path_points(p).iter().map(|q| [mm(q.x), mm(q.y)]).collect();
+                    (points.len() >= 2).then(|| Path {
+                        feature: feature(p.feature),
+                        tool: p.tool,
+                        width_mm: p.width_mm,
+                        speed_mm_s: p.speed_mm_s,
+                        points,
+                    })
+                })
+                .collect(),
+        })
+        .collect();
+    Toolpaths { layers }
+}
+
+fn feature(f: api::Feature) -> Option<Feature> {
+    Some(match f {
+        api::Feature::OuterWall => Feature::OuterWall,
+        api::Feature::InnerWall => Feature::InnerWall,
+        api::Feature::OverhangWall => Feature::OverhangWall,
+        api::Feature::TopSurface => Feature::TopSurface,
+        api::Feature::BottomSurface => Feature::BottomSurface,
+        api::Feature::InternalSolid => Feature::InternalSolid,
+        api::Feature::SparseInfill => Feature::SparseInfill,
+        api::Feature::Bridge => Feature::Bridge,
+        api::Feature::InternalBridge => Feature::InternalBridge,
+        api::Feature::Support => Feature::Support,
+        api::Feature::SupportInterface => Feature::SupportInterface,
+        api::Feature::Brim => Feature::Brim,
+        api::Feature::Skirt => Feature::Skirt,
+        api::Feature::Ironing => Feature::Ironing,
+        api::Feature::GapFill => Feature::GapFill,
+        api::Feature::PrimeTower => Feature::PrimeTower,
+        api::Feature::Custom => Feature::Custom,
+    })
 }
 
 /// The settings, read one key at a time: a key whose value the engine cannot use keeps its default

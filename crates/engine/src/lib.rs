@@ -19,6 +19,7 @@ pub mod crash;
 pub mod easyprint;
 pub mod frames;
 pub mod fuzz;
+pub mod held_slice;
 pub mod licences;
 mod mesh_lines;
 pub mod occurrences;
@@ -623,6 +624,8 @@ pub struct Session {
     /// Host-owned viewport metadata, never saved or included in history.
     render_viewport: Option<Arc<render::ExecutorDescriptor>>,
     render_jobs: render_jobs::Jobs,
+    /// The last `print.slice` of this session (`held_slice`).
+    print_slice: Option<Arc<held_slice::HeldSlice>>,
     /// The visibility the design file holds (what `is_dirty` compares with).
     saved_visibility: Visibility,
     /// States to go back to (`edit.checkpoint`, `edit.restore_checkpoint`): how batches of
@@ -876,6 +879,7 @@ impl Session {
             camera: None,
             render_viewport: None,
             render_jobs: Default::default(),
+            print_slice: None,
             evaluations: 0,
             motion_traces: Default::default(),
             command_check: None,
@@ -2019,6 +2023,7 @@ impl Session {
             camera: self.camera,
             render_viewport: self.render_viewport.clone(),
             render_jobs: self.render_jobs.scratch(),
+            print_slice: self.print_slice.clone(),
             saved_visibility: self.saved_visibility.clone(),
             evaluations: 0,
             motion_traces: self.motion_traces.clone(),
