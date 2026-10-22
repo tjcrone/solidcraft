@@ -110,6 +110,22 @@ fn a_template_that_sends_the_head_outside_the_volume_is_refused() {
 }
 
 #[test]
+fn a_purge_line_in_the_start_template_comes_back_as_a_file_bead() {
+    let parts = [cube(20.0)];
+    // A purge across the bed at 0.3 mm, then a lift and a retraction, which are not beads.
+    let config = r#"{"machine_start_gcode": "G28\nM83\nG90\nG0 X10 Y10 Z0.3 F6000\nG1 X110 E5 F1200\nG1 E-2 F1800\nG0 Z5"}"#;
+    let sliced = default_slicer().slice(&Job { parts: &parts, config }).unwrap_or_else(|e| panic!("{e}"));
+    let beads = &sliced.toolpaths.file_beads;
+    assert_eq!(beads.len(), 1, "{beads:?}");
+    assert_eq!(beads[0].points, vec![[10.0, 10.0, 0.3], [110.0, 10.0, 0.3]]);
+    assert!((beads[0].length_mm() - 100.0).abs() < 1e-3);
+    assert!(beads[0].width_mm > 0.3 && beads[0].width_mm < 0.5, "{}", beads[0].width_mm);
+    // The default templates command no bead.
+    let plain = default_slicer().slice(&Job { parts: &parts, config: "{}" }).unwrap_or_else(|e| panic!("{e}"));
+    assert!(plain.toolpaths.file_beads.is_empty());
+}
+
+#[test]
 fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_walls_in_each() {
     let parts = [cube(20.0)];
     let job = Job { parts: &parts, config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"# };
