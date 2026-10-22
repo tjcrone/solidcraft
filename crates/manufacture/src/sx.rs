@@ -79,6 +79,9 @@ impl Slicer for SxSlicer {
                 outside.first.join("; ")
             )));
         }
+        let bed: [f32; 4] = config.bed_rect().map(|v| v as f32);
+        let mut toolpaths = toolpaths(&out);
+        toolpaths.file_beads = crate::file_beads::read(&gcode, bed, config.filament_diameter as f32);
         Ok(Sliced {
             gcode,
             layers: out.layer_count,
@@ -86,8 +89,8 @@ impl Slicer for SxSlicer {
             filament_mm: stats.filament_mm.iter().sum(),
             filament_g: stats.filament_g.iter().sum(),
             report,
-            toolpaths: toolpaths(&out),
-            bed: config.bed_rect().map(|v| v as f32),
+            toolpaths,
+            bed,
             printable_height: config.printable_height as f32,
             offset,
         })
@@ -120,7 +123,7 @@ fn toolpaths(out: &api::SliceOutput) -> Toolpaths {
                 .collect(),
         })
         .collect();
-    Toolpaths { layers }
+    Toolpaths { layers, file_beads: Vec::new() }
 }
 
 fn feature(f: api::Feature) -> Option<Feature> {
