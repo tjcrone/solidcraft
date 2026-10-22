@@ -150,6 +150,21 @@ impl Layer {
     }
 }
 
+/// A bead the file commands outside the sliced layers (a purge line in the start template, a
+/// wipe in the end template), read back from the G-code: points in plate millimetres with
+/// their Z, and the bead's width worked out from what was extruded.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FileBead {
+    pub points: Vec<[f32; 3]>,
+    pub width_mm: f32,
+}
+
+impl FileBead {
+    pub fn length_mm(&self) -> f64 {
+        self.points.windows(2).map(|w| f64::from((w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))).sum()
+    }
+}
+
 /// The extents of the toolpaths, millimetres.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {
@@ -165,10 +180,12 @@ pub struct FeatureTotal {
     pub length_mm: f64,
 }
 
-/// Every layer of a slice, bottom first.
+/// Every layer of a slice, bottom first, and the beads the file adds around them.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Toolpaths {
     pub layers: Vec<Layer>,
+    /// Beads from the start and end templates that land inside the bed (`crate::file_beads`).
+    pub file_beads: Vec<FileBead>,
 }
 
 impl Toolpaths {
