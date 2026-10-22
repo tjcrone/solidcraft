@@ -175,6 +175,7 @@ path_flange	false
 pattern_circ	false
 pattern_path	false
 pattern_rect	false
+pause	false
 perforate	false
 perspective	false
 pipe	false
@@ -274,6 +275,7 @@ star	false
 status_error	false
 status_pin	false
 status_recovery	false
+stop	false
 style	false
 style_hidden_edges	false
 style_shaded	false

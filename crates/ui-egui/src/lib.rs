@@ -210,6 +210,7 @@ mod primitive_placement;
 mod primitive_units_tests;
 mod print_face_ui;
 pub mod print_workspace;
+pub mod printer_dashboard;
 pub(crate) mod quick_measure;
 #[cfg(test)]
 mod quick_measure_tests;
@@ -528,6 +529,7 @@ pub struct SolveApp {
     pub viewport: viewport::ViewportState,
     pub render_workspace: render_workspace::State,
     pub print_workspace: print_workspace::State,
+    pub printer_dashboard: printer_dashboard::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
     /// The Change Parameters window, when open.
@@ -782,6 +784,7 @@ impl SolveApp {
             viewport: viewport::ViewportState::default(),
             render_workspace,
             print_workspace: print_workspace::State::default(),
+            printer_dashboard: printer_dashboard::State::default(),
             tool: None,
             dialog: None,
             params: None,
@@ -1633,6 +1636,10 @@ impl SolveApp {
         // Print's commands take their settings from the Print workspace, not a dialog.
         if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel") {
             print_workspace::start(self, id);
+            return;
+        }
+        if matches!(id, "print.pause" | "print.resume") {
+            printer_dashboard::start(self, id);
             return;
         }
         // A display toggle leaves the current modelling tool and camera in place.
@@ -2934,7 +2941,9 @@ impl SolveApp {
             render_ui::shots_strip(self, ui);
             render_workspace::panel(self, ui);
         }
-        if print_workspace::active(self) {
+        if printer_dashboard::active(self) {
+            printer_dashboard::panel(self, ui);
+        } else if print_workspace::active(self) {
             print_workspace::panel(self, ui);
         }
         if self.ui.show_browser && !render_ui::focused(self) {
@@ -2994,6 +3003,8 @@ impl SolveApp {
     fn show_workspace(&mut self, ui: &mut egui::Ui) {
         if render_workspace::active(self) {
             render_workspace::show(self, ui);
+        } else if printer_dashboard::active(self) {
+            printer_dashboard::show(self, ui);
         } else if print_workspace::active(self) {
             print_workspace::show(self, ui);
         } else {

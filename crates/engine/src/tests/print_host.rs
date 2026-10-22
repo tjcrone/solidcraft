@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::*;
-use crate::printer_host::{Heater, JobState, PrinterHost, PrinterInfo, PrinterStatus, gcode_file_name};
+use crate::printer_host::{CameraFrame, Heater, JobState, PrinterHost, PrinterInfo, PrinterStatus, Webcam, gcode_file_name};
 
 /// A printer that records what it was asked and answers from a script.
 #[derive(Default)]
@@ -11,6 +11,8 @@ struct Fake {
     jobs: Mutex<Vec<JobState>>,
     status: Mutex<PrinterStatus>,
     refuse: Mutex<bool>,
+    scripts: Mutex<Vec<String>>,
+    watching: Mutex<Option<String>>,
 }
 
 impl PrinterHost for Fake {
@@ -37,6 +39,24 @@ impl PrinterHost for Fake {
     }
     fn status(&self) -> PrinterStatus {
         self.status.lock().unwrap().clone()
+    }
+    fn webcams(&self) -> Vec<Webcam> {
+        vec![Webcam { name: "Camera".into(), stream_url: "http://fake/webcam/?action=stream".into(), enabled: true, ..Default::default() }]
+    }
+    fn script(&self, gcode: &str) -> std::result::Result<u64, String> {
+        if *self.refuse.lock().unwrap() {
+            return Err("printer busy".into());
+        }
+        self.scripts.lock().unwrap().push(gcode.to_string());
+        let mut jobs = self.jobs.lock().unwrap();
+        jobs.push(JobState::Done { message: format!("ran {gcode}"), started: false });
+        Ok(jobs.len() as u64)
+    }
+    fn watch_camera(&self, url: &str, on: bool) {
+        *self.watching.lock().unwrap() = on.then(|| url.to_string());
+    }
+    fn camera_frame(&self) -> std::result::Result<Option<CameraFrame>, String> {
+        Ok(None)
     }
 }
 
@@ -138,6 +158,30 @@ fn status_and_cancel_pass_through_the_host() {
     // The host survives a new design in the same session.
     run(&mut s, "file.new", json!({}));
     assert!(s.printer_host().is_some());
+}
+
+#[test]
+fn temperatures_pauses_and_cameras_go_through_scripts_and_the_list() {
+    let host = Arc::new(Fake::default());
+    let mut s = sliced_session(&host);
+    let r = run(&mut s, "print.heat", json!({"nozzle": 280, "bed": 80.4}));
+    assert_eq!(r["jobs"].as_array().unwrap().len(), 2, "{r}");
+    let r = run(&mut s, "print.heat", json!({"bed": 0}));
+    assert_eq!(r["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(host.scripts.lock().unwrap().clone(), vec!["M104 S280", "M140 S80", "M140 S0"]);
+    for bad in [json!({}), json!({"nozzle": 400}), json!({"bed": -1}), json!({"nozzle": "hot"}), json!({"bed": f64::NAN})] {
+        assert!(s.execute("print.heat", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(host.scripts.lock().unwrap().len(), 3, "a refused request sends nothing");
+    run(&mut s, "print.pause", json!({}));
+    run(&mut s, "print.resume", json!({}));
+    assert_eq!(&host.scripts.lock().unwrap()[3..], ["PAUSE", "RESUME"]);
+    let w = run(&mut s, "print.webcams", json!({}));
+    assert_eq!(w["webcams"][0]["name"], "Camera");
+    assert_eq!(w["webcams"][0]["stream_url"], "http://fake/webcam/?action=stream");
+    let mut bare = Session::default();
+    assert!(bare.execute("print.heat", &json!({"bed": 60})).is_err());
+    assert!(bare.execute("print.webcams", &json!({})).is_err());
 }
 
 #[test]

@@ -70,9 +70,40 @@ pub struct PrinterStatus {
     pub message: String,
 }
 
+/// A camera the printer offers (Moonraker's webcam list).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Webcam {
+    pub name: String,
+    /// Absolute URL of the MJPEG stream.
+    pub stream_url: String,
+    /// Absolute URL of a single JPEG, when the camera offers one.
+    pub snapshot_url: String,
+    pub enabled: bool,
+    /// Degrees clockwise, 0, 90, 180 or 270.
+    pub rotation: u16,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
+}
+
+/// One frame of a camera stream: JPEG bytes and a number that grows with every new frame.
+#[derive(Clone, Debug)]
+pub struct CameraFrame {
+    pub sequence: u64,
+    pub jpeg: Arc<Vec<u8>>,
+}
+
 /// A printer the application can reach. Every method returns at once.
 pub trait PrinterHost: Send + Sync {
     fn info(&self) -> PrinterInfo;
+    /// The cameras the printer lists; empty before the first answer or without any.
+    fn webcams(&self) -> Vec<Webcam>;
+    /// Run a G-code script on the printer (a temperature, a pause); a job to follow.
+    fn script(&self, gcode: &str) -> Result<u64, String>;
+    /// Start (`on`) or stop reading the MJPEG stream at `url`; frames come through
+    /// [`PrinterHost::camera_frame`]. Stopping drops the connection.
+    fn watch_camera(&self, url: &str, on: bool);
+    /// The newest frame of the watched stream, and why there is none when there is none.
+    fn camera_frame(&self) -> Result<Option<CameraFrame>, String>;
     /// Start sending `gcode` to the printer as the file `name`, to be printed at once when
     /// `start`. The job id reports progress through [`PrinterHost::job`].
     fn upload(&self, name: &str, gcode: Vec<u8>, start: bool) -> Result<u64, String>;
