@@ -382,6 +382,7 @@ warning	false
 web	false
 ws_design	false
 ws_drawing	false
+ws_print	false
 ws_render	false
 zebra	false
 zoom	false

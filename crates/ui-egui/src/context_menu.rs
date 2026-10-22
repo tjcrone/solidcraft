@@ -410,10 +410,12 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::Workspace => {
             let rendering = crate::render_workspace::active(app);
             let drawing = crate::drawing_workspace::active(app);
+            let printing = crate::print_workspace::active(app);
+            let free = app.session.active_sketch.is_none() && app.tool.is_none() && app.dialog.is_none() && !app.file_load.busy();
             // Design, then Drawing (the owner's order), then Render: the workspaces there are. Ones still
             // to come aren't listed.
             vec![
-                act("ui.workspace.design", "Design", "ws_design").with(json!({"workspace":"design"})).key(if rendering || drawing {
+                act("ui.workspace.design", "Design", "ws_design").with(json!({"workspace":"design"})).key(if rendering || drawing || printing {
                     ""
                 } else {
                     "current"
@@ -426,6 +428,7 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
                     .with(json!({"workspace":"render"}))
                     .key(if rendering { "current" } else { "" })
                     .on(crate::render_workspace::entry_open(app)),
+                act("ui.workspace.print", "Print", "ws_print").with(json!({"workspace":"print"})).key(if printing { "current" } else { "" }).on(free),
             ]
         }
         Target::Units => crate::prefs::UNITS
@@ -2083,8 +2086,8 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
             }
         }
         "ui.historyShowHidden" => app.tree.history_show_hidden = p["show"].as_bool().unwrap_or(false),
-        "ui.workspace" | "ui.workspace.design" | "ui.workspace.render" | "ui.workspace.drawing" => {
-            let result = p.get("workspace").and_then(Value::as_str).map_or(Ok(()), |workspace| crate::workspace::enter(app, workspace));
+        "ui.workspace" | "ui.workspace.design" | "ui.workspace.render" | "ui.workspace.drawing" | "ui.workspace.print" => {
+            let result = p.get("workspace").and_then(Value::as_str).map_or(Ok(()), |workspace| crate::print_workspace::switch(app, workspace));
             if let Err(error) = result {
                 app.set_status(error, true);
             }
@@ -3274,6 +3277,12 @@ fn workspace_style(item: &Item) -> Option<crate::ui_kit::WorkspaceStyle> {
         "Drawing" => {
             WorkspaceStyle { slug: "drawing", description: "ui.workspace_drawing_description", tabs: Some("ui.workspace_drawing_tabs"), ramp: None }
         }
+        "Print" => WorkspaceStyle {
+            slug: "print",
+            description: "ui.workspace_print_description",
+            tabs: Some("ui.workspace_print_tabs"),
+            ramp: None,
+        },
         _ => return None,
     })
 }
