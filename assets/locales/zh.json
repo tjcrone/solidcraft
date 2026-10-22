@@ -1033,6 +1033,8 @@
   "cmd.pointcloud_insert": "插入点云",
   "cmd.pointcloud_list": "点云",
   "cmd.render_aging_describe": "分层表面老化",
+  "cmd.print.preview": "预览刀路",
+  "cmd.print.save": "保存G-code",
   "cmd.print.slice": "为3D打印切片",
   "cmd.render_backends": "渲染后端",
   "cmd.render_batch": "渲染所有镜头",

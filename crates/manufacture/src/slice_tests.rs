@@ -108,3 +108,51 @@ fn a_template_that_sends_the_head_outside_the_volume_is_refused() {
     let r = default_slicer().slice(&Job { parts: &parts, config });
     assert!(r.is_ok(), "{:?}", r.err());
 }
+
+#[test]
+fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_walls_in_each() {
+    let parts = [cube(20.0)];
+    let job = Job { parts: &parts, config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"# };
+    let sliced = default_slicer().slice(&job).unwrap_or_else(|e| panic!("{e}"));
+    let paths = &sliced.toolpaths;
+    assert_eq!(paths.layers.len(), 100);
+    assert!(paths.segments() > 1000, "{} segments", paths.segments());
+    // Layer tops climb by the layer height; the first layer is the first layer height tall.
+    assert!((paths.layers[0].z - 0.2).abs() < 1e-4, "first layer top {}", paths.layers[0].z);
+    assert!((paths.layers[99].z - 20.0).abs() < 1e-3, "last layer top {}", paths.layers[99].z);
+    assert!(paths.layers.windows(2).all(|w| w[1].z > w[0].z), "layer tops do not climb");
+    for (i, l) in paths.layers.iter().enumerate() {
+        assert!(l.paths.iter().any(|p| p.feature == Some(Feature::OuterWall)), "layer {i} has no outer wall");
+        assert!(l.paths.iter().all(|p| p.points.len() >= 2 && p.width_mm > 0.1 && p.width_mm < 2.0), "layer {i} has a degenerate path");
+        assert!(l.time_s > 0.0, "layer {i} takes no time");
+    }
+    // The cube stands in the middle of the default 256 mm bed: its walls span about 20 mm each way.
+    let b = paths.bounds().unwrap_or_else(|| panic!("no bounds"));
+    for axis in 0..2 {
+        let span = b.max[axis] - b.min[axis];
+        assert!(span > 19.0 && span < 40.0, "span {span} on axis {axis} (skirt or brim counted)");
+        assert!(b.min[axis] > 80.0 && b.max[axis] < 176.0, "not in the middle of the bed: {b:?}");
+    }
+    assert!(b.min[2].abs() < 1e-4 && (b.max[2] - 20.0).abs() < 1e-3, "{b:?}");
+    // The totals name every feature printed; outer walls are the longest wall feature of a plain cube.
+    let totals = paths.by_feature();
+    let outer = totals.iter().find(|t| t.feature == Some(Feature::OuterWall)).unwrap_or_else(|| panic!("no outer wall total"));
+    assert!(outer.paths >= 100 && outer.length_mm > 100.0 * 70.0, "{outer:?}");
+    assert!(totals.iter().all(|t| t.paths > 0));
+    // Travels run between consecutive paths of a layer.
+    let l = &paths.layers[50];
+    assert_eq!(l.travels().count(), l.paths.len() - 1);
+}
+
+#[test]
+fn feature_ids_round_trip_and_cover_every_feature() {
+    for f in Feature::ALL {
+        assert_eq!(Feature::parse(f.id()), Some(f));
+        assert!(!f.label().is_empty());
+    }
+    assert_eq!(Feature::parse("nothing"), None);
+    let mut ids: Vec<&str> = Feature::ALL.iter().map(|f| f.id()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), Feature::ALL.len(), "two features share an id");
+}

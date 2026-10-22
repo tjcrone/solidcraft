@@ -1033,6 +1033,8 @@
   "cmd.pointcloud_insert": "点群を挿入",
   "cmd.pointcloud_list": "点群",
   "cmd.render_aging_describe": "レイヤー式表面エイジング",
+  "cmd.print.preview": "ツールパスをプレビュー",
+  "cmd.print.save": "G-codeを保存",
   "cmd.print.slice": "3Dプリント用にスライス",
   "cmd.render_backends": "レンダリング バックエンド",
   "cmd.render_batch": "すべてのショットをレンダリング",
