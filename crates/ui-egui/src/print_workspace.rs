@@ -590,6 +590,15 @@ fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
     let travels_label = app.tr("print.show_travels").to_string();
     crate::ui_kit::checkbox(ui, &travels_label, &mut app.print_workspace.show_travels);
     ui.label(app.tr("print.features"));
+    if !paths.file_beads.is_empty() {
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+            let c = feature_color(Some(Feature::Custom));
+            ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c[0], c[1], c[2]));
+            ui.label(app.tr("print.file_beads"));
+            ui.small(format!("{:.2} m", paths.file_beads.iter().map(|b| b.length_mm()).sum::<f64>() / 1000.0));
+        });
+    }
     for total in paths.by_feature() {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
@@ -827,6 +836,10 @@ fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<GpuScene, String> {
         .ok_or_else(|| format!("{segments} segments are past the preview's geometry budget"))?;
     let mut gpu = GpuScene::default();
     bed(&mut gpu, held.sliced.bed);
+    let first_height = paths.layers.first().map_or(0.2, |l| l.height);
+    for bead in &paths.file_beads {
+        file_bead(&mut gpu, bead, first_height, detail);
+    }
     for layer in &paths.layers {
         layer_beads(&mut gpu, layer, detail);
         if travels {
@@ -951,6 +964,25 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
         } else if let Some(last) = pts.last() {
             bead_cap(gpu, &prof, *last, d_last, [-d_last[1], d_last[0]], 1.0, detail, c);
         }
+    }
+}
+
+/// A bead the file lays outside the layers (a purge line), in the Custom colour, as tall as the
+/// nozzle stands over the bed up to one first layer.
+fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead, first_height: f32, detail: Detail) {
+    let c = feature_color(Some(Feature::Custom));
+    let half = (bead.width_mm * 0.5).max(0.05);
+    for w in bead.points.windows(2) {
+        let (a, b) = ([w[0][0], w[0][1]], [w[1][0], w[1][1]]);
+        let Some((_, n)) = direction(a, b) else { continue };
+        let top = w[1][2];
+        let bottom = (top - top.min(first_height).max(0.05)).max(0.0);
+        if detail == Detail::Lines {
+            gpu.line([a[0], a[1], top], [b[0], b[1], top], c, 1.5, false);
+            continue;
+        }
+        let prof = Profile { top, mid: (top + bottom) * 0.5, bottom, half };
+        bead_segment(gpu, &prof, a, b, n, detail, c);
     }
 }
 
