@@ -307,6 +307,7 @@ mod primitive_placement;
 #[cfg(test)]
 mod primitive_units_tests;
 mod print_face_ui;
+pub mod print_workspace;
 pub(crate) mod quick_measure;
 #[cfg(test)]
 mod quick_measure_tests;
@@ -780,6 +781,7 @@ pub struct SolveApp {
     pub viewport: viewport::ViewportState,
     pub render_workspace: render_workspace::State,
     pub drawing_workspace: drawing_workspace::State,
+    pub print_workspace: print_workspace::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
     /// The joint dialogs' picked and hovered snaps ([`dialogs_assembly::picked_snap`]).
@@ -1205,6 +1207,7 @@ impl SolveApp {
             viewport: viewport::ViewportState::default(),
             render_workspace,
             drawing_workspace: Default::default(),
+            print_workspace: print_workspace::State::default(),
             tool: None,
             dialog: None,
             snaps: Default::default(),
@@ -2321,6 +2324,7 @@ impl SolveApp {
                     self.edit_in_place.active = None;
                     render_workspace::reset_document(self);
                     drawing_workspace::reset_document(self);
+                    print_workspace::reset_document(self);
                     dim_view::cancel();
                     self.bom = None;
                     design_properties::close_object(self);
@@ -2895,6 +2899,11 @@ impl SolveApp {
         }
         if id == "library.export" {
             dialogs_library::start_export(self);
+            return;
+        }
+        // Print's commands take their settings from the Print workspace, not a dialog.
+        if matches!(id, "print.slice" | "print.save") {
+            print_workspace::start(self, id);
             return;
         }
         if id == "view.layout" {
@@ -4188,6 +4197,13 @@ impl SolveApp {
             drawing_sheet_page::fit(self);
             return;
         }
+        if print_workspace::active(self) {
+            self.cancel_view_animation();
+            if let Some(b) = print_workspace::bounds(self) {
+                self.cam.fit(&b);
+            }
+            return;
+        }
         if render_workspace::active(self) {
             self.cancel_view_animation();
             match solidcraft_engine::product_scene::extract(&self.session) {
@@ -4401,8 +4417,8 @@ impl SolveApp {
             drawing_sheet_page::fit(self);
             return;
         }
-        if render_workspace::active(self) {
-            // The Render preview frames its product scene (see `fit_view`).
+        if render_workspace::active(self) || print_workspace::active(self) {
+            // The Render preview frames its product scene (see `fit_view`); Print its toolpaths.
             self.fit_view();
             return;
         }
@@ -4480,7 +4496,7 @@ impl SolveApp {
             self.animate_to(to);
             return;
         }
-        if render_workspace::active(self) {
+        if render_workspace::active(self) || print_workspace::active(self) {
             if home {
                 self.cam.set_view(StandardView::Iso);
             }
@@ -5125,6 +5141,8 @@ impl SolveApp {
             // The model view is not drawn, so no shown dimension can be double-clicked.
             dim_view::set_model_drawn(Vec::new());
             render_workspace::show(self, ui);
+        } else if print_workspace::active(self) {
+            print_workspace::show(self, ui);
         } else {
             viewport::show(self, ui);
         }
