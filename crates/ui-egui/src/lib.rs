@@ -266,6 +266,7 @@ mod primitive_placement;
 mod primitive_units_tests;
 mod print_face_ui;
 pub mod print_workspace;
+pub mod printer_dashboard;
 pub(crate) mod quick_measure;
 #[cfg(test)]
 mod quick_measure_tests;
@@ -696,6 +697,7 @@ pub struct SolveApp {
     pub render_workspace: render_workspace::State,
     pub drawing_workspace: drawing_workspace::State,
     pub print_workspace: print_workspace::State,
+    pub printer_dashboard: printer_dashboard::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
     /// The joint dialogs' picked and hovered snaps ([`dialogs_assembly::picked_snap`]).
@@ -1069,6 +1071,7 @@ impl SolveApp {
             render_workspace,
             drawing_workspace: Default::default(),
             print_workspace: print_workspace::State::default(),
+            printer_dashboard: printer_dashboard::State::default(),
             tool: None,
             dialog: None,
             snaps: Default::default(),
@@ -2434,6 +2437,10 @@ impl SolveApp {
         // Print's commands take their settings from the Print workspace, not a dialog.
         if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel") {
             print_workspace::start(self, id);
+            return;
+        }
+        if matches!(id, "print.pause" | "print.resume") {
+            printer_dashboard::start(self, id);
             return;
         }
         if id == "view.layout" {
@@ -4339,6 +4346,8 @@ impl SolveApp {
             // The model view is not drawn, so no shown dimension can be double-clicked.
             dim_view::set_model_drawn(Vec::new());
             render_workspace::show(self, ui);
+        } else if printer_dashboard::active(self) {
+            printer_dashboard::show(self, ui);
         } else if print_workspace::active(self) {
             print_workspace::show(self, ui);
         } else {
