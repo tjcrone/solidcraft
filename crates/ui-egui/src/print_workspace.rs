@@ -50,8 +50,6 @@ pub struct State {
     pub job: Option<u64>,
     /// The "start printing?" question is open.
     confirm_print: bool,
-    /// The settings panel's cached values and drafts.
-    pub settings_panel: crate::print_settings_panel::Cache,
     slot: SceneSlot,
     key: Option<u64>,
     /// What the uploaded scene was made from.
@@ -76,7 +74,6 @@ impl Default for State {
             printer_tried: None,
             job: None,
             confirm_print: false,
-            settings_panel: Default::default(),
             slot: Arc::new(Mutex::new(None)),
             key: None,
             uploaded: None,
@@ -334,7 +331,7 @@ fn settings_path(app: &SolveApp) -> Option<std::path::PathBuf> {
     app.services.graphics_path.as_ref().map(|p| std::path::Path::new(p).with_file_name("print.json"))
 }
 
-fn load_settings(app: &mut SolveApp) {
+pub(crate) fn load_settings(app: &mut SolveApp) {
     if app.print_workspace.settings_loaded {
         return;
     }
@@ -347,7 +344,7 @@ fn load_settings(app: &mut SolveApp) {
     }
 }
 
-fn save_settings(app: &mut SolveApp) {
+pub(crate) fn save_settings(app: &mut SolveApp) {
     let Some(path) = settings_path(app) else { return };
     match serde_json::to_string_pretty(&app.print_workspace.settings) {
         Ok(text) => {
@@ -381,38 +378,20 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             crate::ui_kit::scope(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.heading(app.tr("print.slice_title"));
-                    ui.label(app.tr("print.config_files"));
-                    wrapped_small(ui, app.tr("print.config_help"));
-                    let mut remove = None;
-                    for (i, file) in app.print_workspace.settings.config_files.clone().iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            let name = std::path::Path::new(file).file_name().and_then(|s| s.to_str()).unwrap_or(file);
-                            ui.label(name).on_hover_text(file);
-                            if crate::ui_kit::button(ui, app.tr("print.config_remove"), crate::ui_kit::Button::Small).clicked() {
-                                remove = Some(i);
-                            }
-                        });
+                    let n = app.print_workspace.settings.config_files.len();
+                    let files = if n == 0 {
+                        app.tr("print.config_none").to_string()
+                    } else {
+                        crate::i18n::format("print.config_count", &[("n", &n.to_string())])
+                    };
+                    let overrides = app.session.doc.print.overlay.len();
+                    ui.label(files);
+                    if overrides > 0 {
+                        ui.small(crate::i18n::format("print.overrides_count", &[("n", &overrides.to_string())]));
                     }
-                    if let Some(i) = remove
-                        && i < app.print_workspace.settings.config_files.len()
-                    {
-                        app.print_workspace.settings.config_files.remove(i);
-                        save_settings(app);
+                    if crate::ui_kit::button(ui, app.tr("print.open_settings"), crate::ui_kit::Button::Normal).clicked() {
+                        app.start("print.settings.set");
                     }
-                    if crate::ui_kit::button(ui, app.tr("print.config_add"), crate::ui_kit::Button::Normal).clicked() {
-                        app.pick_file("JSON", &["json"], |app, path| {
-                            if let Some(path) = path
-                                && !app.print_workspace.settings.config_files.contains(&path)
-                            {
-                                app.print_workspace.settings.config_files.push(path);
-                                save_settings(app);
-                            }
-                        });
-                    }
-                    ui.separator();
-                    ui.heading(app.tr("print.settings_title"));
-                    crate::print_settings_panel::rows(app, ui);
-                    ui.add_space(6.0);
                     if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Normal).clicked() {
                         slice(app);
                     }

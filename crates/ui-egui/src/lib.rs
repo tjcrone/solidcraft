@@ -266,6 +266,7 @@ mod primitive_placement;
 mod primitive_units_tests;
 mod print_face_ui;
 pub mod print_settings_panel;
+pub mod print_settings_window;
 pub mod print_workspace;
 pub mod printer_dashboard;
 pub(crate) mod quick_measure;
@@ -698,6 +699,7 @@ pub struct SolveApp {
     pub render_workspace: render_workspace::State,
     pub drawing_workspace: drawing_workspace::State,
     pub print_workspace: print_workspace::State,
+    pub print_settings_window: print_settings_window::PrintSettingsWindow,
     pub printer_dashboard: printer_dashboard::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
@@ -1072,6 +1074,7 @@ impl SolveApp {
             render_workspace,
             drawing_workspace: Default::default(),
             print_workspace: print_workspace::State::default(),
+            print_settings_window: Default::default(),
             printer_dashboard: printer_dashboard::State::default(),
             tool: None,
             dialog: None,
@@ -2435,7 +2438,12 @@ impl SolveApp {
             dialogs_library::start_export(self);
             return;
         }
-        // Print's commands take their settings from the Print workspace, not a dialog.
+        // The Print Settings window is the one print dialog; the other print commands take
+        // their settings from the Print workspace.
+        if id == "print.settings.set" {
+            print_settings_window::open(self);
+            return;
+        }
         if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel") {
             print_workspace::start(self, id);
             return;
@@ -4300,6 +4308,7 @@ impl SolveApp {
         dialogs::show(self, ui.ctx());
         issue_report::CadInput::block(self, ui, report_input);
         params_dialog::show(self, ui.ctx());
+        print_settings_window::show(self, ui.ctx());
         design_properties::show(self, ui.ctx());
         sketch_report::show(self, ui.ctx());
         material_card_review::show(self, ui.ctx());
