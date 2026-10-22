@@ -75,13 +75,13 @@ pub fn active(app: &SolveApp) -> bool {
 /// apart by hue without any of them shouting; greys for support, near-white for gap fill.
 pub fn feature_color(feature: Option<Feature>) -> [u8; 4] {
     match feature {
-        Some(Feature::OuterWall) => [0xe0, 0x82, 0x56, 255],
+        Some(Feature::OuterWall) => [0xd5, 0x5c, 0x13, 255],
         Some(Feature::InnerWall) => [0xd5, 0xb4, 0x55, 255],
         Some(Feature::OverhangWall) => [0x5a, 0x86, 0xce, 255],
         Some(Feature::TopSurface) => [0xd5, 0x6e, 0x78, 255],
         Some(Feature::BottomSurface) => [0x9f, 0x71, 0xb4, 255],
         Some(Feature::InternalSolid) => [0x9a, 0x50, 0x4b, 255],
-        Some(Feature::SparseInfill) => [0x63, 0xab, 0x74, 255],
+        Some(Feature::SparseInfill) => [0x72, 0x00, 0x13, 255],
         Some(Feature::Bridge) => [0x4d, 0xb4, 0xcc, 255],
         Some(Feature::InternalBridge) => [0x34, 0x89, 0x8d, 255],
         Some(Feature::Support) => [0xab, 0xab, 0xab, 255],
