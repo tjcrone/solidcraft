@@ -86,6 +86,8 @@ impl Slicer for SxSlicer {
             filament_g: stats.filament_g.iter().sum(),
             report,
             toolpaths: toolpaths(&out),
+            bed: config.bed_rect().map(|v| v as f32),
+            printable_height: config.printable_height as f32,
         })
     }
 }

@@ -378,6 +378,7 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
         ids: &["render.export", "render.result.regrade", "render.compare", "render.status", "render.backends"],
     },
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
+    Section { tab: "PRINT", panel: "SLICE", promoted: 2, ids: &["print.slice", "print.save"] },
 ];
 
 /// Compact source labels for painted big buttons only. Menus, search and tooltips
@@ -669,6 +670,9 @@ pub fn visible_tabs(app: &crate::SolveApp) -> Vec<&'static str> {
     if crate::render_workspace::active(app) {
         return Vec::new();
     }
+    if crate::print_workspace::active(app) {
+        return vec!["PRINT"];
+    }
     let mut tabs: Vec<_> = TABS.iter().copied().filter(|tab| tab_turned_on(app, tab)).collect();
     if app.preferences.sketch_tab_always {
         // Right after MODEL, whether a sketch is open or not (#7904).
@@ -703,7 +707,7 @@ pub fn starts_a_sketch(app: &crate::SolveApp, id: &str) -> bool {
 /// other tabs to remain usable for the rest of that context. Sketch takes precedence over sheet
 /// metal, and sheet metal over weldments.
 pub fn sync_context(app: &mut crate::SolveApp) {
-    if crate::render_workspace::active(app) {
+    if crate::render_workspace::active(app) || crate::print_workspace::active(app) {
         return;
     }
     let context = app
