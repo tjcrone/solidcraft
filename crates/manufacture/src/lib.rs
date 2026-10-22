@@ -110,6 +110,9 @@ pub struct Sliced {
     pub bed: [f32; 4],
     /// The printer's printable height, mm.
     pub printable_height: f32,
+    /// Where the slicer put the parts on the bed: plate coordinates = part coordinates + offset.
+    /// The toolpaths and the G-code are in plate coordinates.
+    pub offset: [f32; 3],
 }
 
 /// A slicing engine. One job in, one G-code file out; no state between calls.

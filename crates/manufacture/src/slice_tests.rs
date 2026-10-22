@@ -145,6 +145,10 @@ fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_wal
     // The default printer: a 256 mm bed, 250 mm tall.
     assert_eq!(sliced.bed, [0.0, 0.0, 256.0, 256.0]);
     assert_eq!(sliced.printable_height, 250.0);
+    // The cube's corner was at the origin; the slicer put its middle at the bed's middle.
+    assert_eq!(sliced.offset, [118.0, 118.0, 0.0]);
+    let b = paths.bounds().unwrap_or_else(|| panic!("no bounds"));
+    assert!((b.min[0] - sliced.offset[0]).abs() < 10.0 && (b.max[0] - sliced.offset[0] - 20.0).abs() < 10.0, "{b:?}");
 }
 
 #[test]
