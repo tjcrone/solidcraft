@@ -39,6 +39,7 @@ pub mod origins;
 pub mod panels;
 pub mod params;
 pub mod plugin;
+pub mod printer_host;
 pub mod product_scene;
 pub mod recovery;
 pub mod render_jobs;
@@ -818,6 +819,8 @@ pub struct Session {
     pub(crate) drawing_scenes: drawing_scene::Cache,
     /// The last `print.slice` of this session (`held_slice`).
     print_slice: Option<Arc<held_slice::HeldSlice>>,
+    /// The printer the application installed (`printer_host`).
+    printer_host: Option<Arc<dyn printer_host::PrinterHost>>,
     /// The visibility the design file holds (what `is_dirty` compares with).
     saved_visibility: Visibility,
     /// The design as `doc.open` made it from a STEP, IGES or mesh file, never saved yet: while it
@@ -1179,6 +1182,7 @@ impl Session {
             dimension_values: Default::default(),
             drawing_scenes: Default::default(),
             print_slice: None,
+            printer_host: None,
             evaluations: 0,
             motion_traces: Default::default(),
             command_check: None,
@@ -1210,6 +1214,7 @@ impl Session {
         let keep_print_faces = self.keep_print_faces;
         let render_viewport = self.render_viewport.clone();
         let render_jobs = self.render_jobs.scratch();
+        let printer_host = self.printer_host.clone();
         let checkpoints = std::mem::take(&mut self.checkpoints);
         let next_checkpoint = self.next_checkpoint;
         let ids = self.ids.clone();
@@ -1238,6 +1243,7 @@ impl Session {
         self.keep_print_faces = keep_print_faces;
         self.render_viewport = render_viewport;
         self.render_jobs = render_jobs;
+        self.printer_host = printer_host;
         self.checkpoints = checkpoints;
         self.next_checkpoint = next_checkpoint;
         self.replacements = replacements;
@@ -2814,6 +2820,7 @@ impl Session {
             // (`scratch_as_shown`), the many others never read them.
             drawing_scenes: Default::default(),
             print_slice: self.print_slice.clone(),
+            printer_host: self.printer_host.clone(),
             saved_visibility: self.saved_visibility.clone(),
             dimension_values: self.dimension_values.clone(),
             opened_import: self.opened_import.clone(),

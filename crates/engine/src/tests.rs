@@ -542,6 +542,7 @@ mod openusd;
 mod path_scope;
 mod pleat_join;
 mod primitive_points;
+mod print_host;
 mod print_slice;
 mod rim_cut;
 mod robustness;
