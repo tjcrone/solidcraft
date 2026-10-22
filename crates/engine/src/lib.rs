@@ -56,6 +56,7 @@ pub use solidcraft_doc::Visibility;
 pub use solidcraft_geom as geom;
 pub use solidcraft_io as io;
 pub use solidcraft_kernel as kernel;
+pub use solidcraft_manufacture as manufacture;
 pub use solidcraft_render as render;
 pub use solidcraft_sketch as sketch;
 

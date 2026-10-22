@@ -134,6 +134,7 @@ fn the_session_holds_the_slice_for_preview_and_save_until_the_design_changes() {
     let p = run(&mut s, "print.preview", json!({}));
     assert_eq!(p["stale"], false, "{p}");
     assert_eq!(p["layers"], 100);
+    assert_eq!(p["bed"], json!([0.0, 0.0, 256.0, 256.0]), "{p}");
     assert_eq!(p["z"].as_array().unwrap().len(), 100);
     assert!(p["features"].as_array().unwrap().iter().any(|f| f["feature"] == "outer_wall"), "{}", p["features"]);
     assert!(p.get("layer").is_none());

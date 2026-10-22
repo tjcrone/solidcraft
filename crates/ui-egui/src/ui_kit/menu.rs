@@ -365,6 +365,7 @@ pub(crate) fn workspace_menu(ui: &mut egui::Ui, items: &[Item], key_row: Option<
                 let (slug, description, tabs) = match item.label.as_str() {
                     "Design" => ("design", "ui.workspace_design_description", Some("ui.workspace_design_tabs")),
                     "Render" => ("render", "ui.workspace_render_description", Some("ui.workspace_render_tabs")),
+                    "Print" => ("print", "ui.workspace_print_description", Some("ui.workspace_print_tabs")),
                     "Animation" => ("animation", "ui.workspace_animation_description", None),
                     "Simulation" => ("simulation", "ui.workspace_simulation_description", None),
                     "Manufacture" => ("manufacture", "ui.workspace_manufacture_description", None),

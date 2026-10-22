@@ -209,6 +209,7 @@ mod primitive_placement;
 #[cfg(test)]
 mod primitive_units_tests;
 mod print_face_ui;
+pub mod print_workspace;
 pub(crate) mod quick_measure;
 #[cfg(test)]
 mod quick_measure_tests;
@@ -523,6 +524,7 @@ pub struct SolveApp {
     saving: Option<save_job::Saving>,
     pub viewport: viewport::ViewportState,
     pub render_workspace: render_workspace::State,
+    pub print_workspace: print_workspace::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
     /// The Change Parameters window, when open.
@@ -776,6 +778,7 @@ impl SolveApp {
             saving: None,
             viewport: viewport::ViewportState::default(),
             render_workspace,
+            print_workspace: print_workspace::State::default(),
             tool: None,
             dialog: None,
             params: None,
@@ -1404,6 +1407,7 @@ impl SolveApp {
                     documents::reset_chat(self);
                     self.edit_in_place.active = None;
                     render_workspace::reset_document(self);
+                    print_workspace::reset_document(self);
                     dim_view::cancel();
                     design_properties::close_object(self);
                     timeline::stop_playback(self);
@@ -1621,6 +1625,11 @@ impl SolveApp {
         }
         if id == "library.export" {
             dialogs_library::start_export(self);
+            return;
+        }
+        // Print's commands take their settings from the Print workspace, not a dialog.
+        if matches!(id, "print.slice" | "print.save") {
+            print_workspace::start(self, id);
             return;
         }
         // A display toggle leaves the current modelling tool and camera in place.
@@ -2371,6 +2380,13 @@ impl SolveApp {
             self.flat_view.fitted = false;
             return;
         }
+        if print_workspace::active(self) {
+            self.cancel_view_animation();
+            if let Some(b) = print_workspace::bounds(self) {
+                self.cam.fit(&b);
+            }
+            return;
+        }
         if render_workspace::active(self) {
             self.cancel_view_animation();
             match solidcraft_engine::product_scene::extract(&self.session) {
@@ -2498,8 +2514,8 @@ impl SolveApp {
             self.animate_view("fit");
             return;
         }
-        if render_workspace::active(self) {
-            // The Render preview frames its product scene (see `fit_view`).
+        if render_workspace::active(self) || print_workspace::active(self) {
+            // The Render preview frames its product scene (see `fit_view`); Print its toolpaths.
             self.fit_view();
             return;
         }
@@ -2533,7 +2549,7 @@ impl SolveApp {
             self.flat_view.fitted = false;
             return;
         }
-        if render_workspace::active(self) {
+        if render_workspace::active(self) || print_workspace::active(self) {
             if home {
                 self.cam.set_view(StandardView::Iso);
             }
@@ -2915,6 +2931,9 @@ impl SolveApp {
             render_ui::shots_strip(self, ui);
             render_workspace::panel(self, ui);
         }
+        if print_workspace::active(self) {
+            print_workspace::panel(self, ui);
+        }
         if self.ui.show_browser && !render_ui::focused(self) {
             browser::browser(self, ui);
         }
@@ -2972,6 +2991,8 @@ impl SolveApp {
     fn show_workspace(&mut self, ui: &mut egui::Ui) {
         if render_workspace::active(self) {
             render_workspace::show(self, ui);
+        } else if print_workspace::active(self) {
+            print_workspace::show(self, ui);
         } else {
             viewport::show(self, ui);
         }

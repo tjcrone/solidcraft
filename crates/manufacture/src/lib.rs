@@ -106,6 +106,10 @@ pub struct Sliced {
     pub report: Report,
     /// The paths the G-code was written from, for a layer preview.
     pub toolpaths: Toolpaths,
+    /// The printer's bed as the settings describe it: `[min_x, min_y, max_x, max_y]` mm.
+    pub bed: [f32; 4],
+    /// The printer's printable height, mm.
+    pub printable_height: f32,
 }
 
 /// A slicing engine. One job in, one G-code file out; no state between calls.

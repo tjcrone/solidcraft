@@ -730,6 +730,11 @@ fn dispatch(app: &mut SolveApp, ctx: &egui::Context, method: &str, p: &Value) ->
                     {
                         return err(e);
                     }
+                    if (u.tab == "PRINT") != crate::print_workspace::active(app)
+                        && let Err(e) = crate::print_workspace::enter(app, u.tab == "PRINT")
+                    {
+                        return err(e);
+                    }
                     u.ribbon_context = app.ui.ribbon_context.clone();
                     app.ui = u;
                     app.session.visibility = v;
