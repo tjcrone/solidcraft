@@ -115,6 +115,12 @@ pub(super) fn interface(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                         let check = setting::viewport_status_summary(app, ui).on_hover_text(app.tr("prefs.viewport_status_summary_help"));
                         crate::scenario::publish_target("prefs:viewport_status_summary", check.rect);
                     });
+                    ui_kit::row(ui, "", |ui| {
+                        ui.add_enabled_ui(!app.preferences.ribbon_labels, |ui| {
+                            let label = app.tr("prefs.big_icons").to_string();
+                            ui_kit::checkbox(ui, &label, &mut app.preferences.ribbon_big_icons);
+                        });
+                    });
                     // The SKETCH tab outside a sketch too (#7904).
                     ui_kit::row(ui, "", |ui| {
                         let check = setting::sketch_tab_always(app, ui).on_hover_text(app.tr("prefs.sketch_tab_always_note"));

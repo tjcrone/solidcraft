@@ -2113,6 +2113,7 @@
   "prefs.auto_operation_note": "Feature windows pick Join, New Body or Cut from what the new material touches, until you pick one. Off: they keep the operation they open with.",
   "prefs.axes": "Axes",
   "prefs.axis": "Axis",
+  "prefs.big_icons": "Larger icons",
   "prefs.bodies_folders": "Bodies folders",
   "prefs.bodies_folders_always": "Always",
   "prefs.bodies_folders_never": "Never",

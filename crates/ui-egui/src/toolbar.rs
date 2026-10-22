@@ -102,10 +102,17 @@ pub(crate) const WORKSPACE_WIDTH: f32 = 88.0;
 const BUTTON_HEIGHT: f32 = 60.0;
 const ICON_BUTTON_HEIGHT: f32 = 36.0;
 const ICON_GROUP_HEIGHT: f32 = 62.0;
+/// Icons only with the "larger icons" preference: 40 px icons in 48 px buttons (36 px icons in
+/// a sketch family's button, whose strip opens the family), the ribbon as tall as with labels.
+const BIG_ICON_SIDE: f32 = 40.0;
+const BIG_FAMILY_ICON_SIDE: f32 = 36.0;
+const BIG_ICON_BUTTON_WIDTH: f32 = 48.0;
+const BIG_ICON_BUTTON_HEIGHT: f32 = 52.0;
+const BIG_ICON_GROUP_HEIGHT: f32 = GROUP_HEIGHT;
 
 /// The same height drives shell reservations and ribbon painting in either layout.
-pub(crate) fn ribbon_height(labels: bool) -> f32 {
-    if labels { RIBBON_HEIGHT } else { TAB_ROW_HEIGHT + ICON_GROUP_HEIGHT + 1.0 }
+pub(crate) fn ribbon_height(labels: bool, big_icons: bool) -> f32 {
+    if labels || big_icons { RIBBON_HEIGHT } else { TAB_ROW_HEIGHT + ICON_GROUP_HEIGHT + 1.0 }
 }
 const BUTTON_GAP: f32 = 3.0;
 const BUTTON_MIN_WIDTH: f32 = 54.0;
@@ -1342,7 +1349,7 @@ pub(crate) fn shell_cards(app: &SolveApp, available: Rect) -> crate::shell::Card
     if crate::render_workspace::active(app) {
         crate::ui_kit::StageBar::cards(available)
     } else {
-        crate::shell::Cards::new(available, shell_layout(app), ribbon_height(app.preferences.ribbon_labels))
+        crate::shell::Cards::new(available, shell_layout(app), ribbon_height(app.preferences.ribbon_labels, app.preferences.ribbon_big_icons))
     }
 }
 
@@ -1352,9 +1359,24 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
     let labels = app.preferences.ribbon_labels;
-    let button_height = if labels { BUTTON_HEIGHT } else { ICON_BUTTON_HEIGHT };
-    let group_height = if labels { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };
-    let ribbon_height = ribbon_height(labels);
+    let big = !labels && app.preferences.ribbon_big_icons;
+    let button_height = if labels {
+        BUTTON_HEIGHT
+    } else if big {
+        BIG_ICON_BUTTON_HEIGHT
+    } else {
+        ICON_BUTTON_HEIGHT
+    };
+    let group_height = if labels {
+        GROUP_HEIGHT
+    } else if big {
+        BIG_ICON_GROUP_HEIGHT
+    } else {
+        ICON_GROUP_HEIGHT
+    };
+    let ribbon_height = ribbon_height(labels, big);
+    // The workspace button's rows sit lower in the full-height ribbon.
+    let tall = labels || big;
     let gallery_width = if labels { CONSTRAINT_GRID_WIDTH } else { 6.0 * 27.0 };
     let cards = shell_cards(app, ui.available_rect_before_wrap());
     let height = if floating { cards.bottom - ui.available_rect_before_wrap().top() } else { ribbon_height };
@@ -1417,13 +1439,13 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
             let workspace_icon = if print { "ws_print" } else { "ws_design" };
             icons::paint_icon(
                 &painter,
-                Rect::from_center_size(pos2(ws.center().x, ws.top() + if labels { 39.0 } else { 25.0 }), vec2(30.0, 30.0)),
+                Rect::from_center_size(pos2(ws.center().x, ws.top() + if tall { 39.0 } else { 25.0 }), vec2(30.0, 30.0)),
                 workspace_icon,
                 1.0,
             );
             ribbon_text(
                 ui,
-                pos2(ws.center().x, ws.top() + if labels { 69.0 } else { 50.0 }),
+                pos2(ws.center().x, ws.top() + if tall { 69.0 } else { 50.0 }),
                 app.tr(if print { "ui.print" } else { "ui.design" }),
                 t.font_button,
                 t.text,
@@ -1438,8 +1460,8 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                 egui::TextStyle::Button,
             );
             let label_width = galley.size().x;
-            ribbon_galley(ui, pos2(ws.center().x - 6.0, ws.top() + if labels { 89.0 } else { 70.0 }), galley, t.text_dim);
-            dropdown_arrow(&painter, pos2(ws.center().x - 6.0 + label_width / 2.0 + 7.0, ws.top() + if labels { 89.5 } else { 70.5 }), t.text_dim);
+            ribbon_galley(ui, pos2(ws.center().x - 6.0, ws.top() + if tall { 89.0 } else { 70.0 }), galley, t.text_dim);
+            dropdown_arrow(&painter, pos2(ws.center().x - 6.0 + label_width / 2.0 + 7.0, ws.top() + if tall { 89.5 } else { 70.5 }), t.text_dim);
         }
         if wresp.on_hover_text(app.tr("ui.change_workspace")).clicked() {
             crate::context_menu::toggle_for(app, ws, ws.left_bottom(), crate::context_menu::Target::Workspace);
@@ -1521,6 +1543,9 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                         let label = family.map_or_else(|| crate::workspace::ribbon_button_label(c), crate::workspace::ribbon_family_label);
                         if labels {
                             ButtonSize { width: ribbon_button_width(&painter, app.tr_label(label)), min_width: BUTTON_MIN_WIDTH }
+                        } else if big {
+                            let width = BIG_ICON_BUTTON_WIDTH + if family.is_some() { 14.0 } else { 0.0 };
+                            ButtonSize { width, min_width: width }
                         } else {
                             let width = if family.is_some() { 50.0 } else { 40.0 };
                             ButtonSize { width, min_width: width }
@@ -1703,7 +1728,13 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                     reveal_tooltip(app, ui, whole, command, egui::RectAlign::BOTTOM_START);
                 }
                 let icon = if selected.id == "sketch.finish" { "finish" } else { info.icon };
-                let side = if finish { 30.0 } else { 26.0 };
+                let side = if big {
+                    if family.is_some() { BIG_FAMILY_ICON_SIDE } else { BIG_ICON_SIDE }
+                } else if finish {
+                    30.0
+                } else {
+                    26.0
+                };
                 let icon_rect =
                     Rect::from_center_size(pos2(br.center().x, whole.top() + if labels { 16.0 } else { button_height / 2.0 }), vec2(side, side));
                 icons::paint_icon(&painter, icon_rect, icon, if info.enabled { 1.0 } else { 0.35 });

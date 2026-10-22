@@ -2113,6 +2113,7 @@
   "prefs.auto_operation_note": "特征窗口根据新材料接触的对象选择连接、新建实体或剪切，直到您手动选择。关闭：保持窗口打开时的操作。",
   "prefs.axes": "坐标轴",
   "prefs.axis": "轴",
+  "prefs.big_icons": "更大的图标",
   "prefs.bodies_folders": "实体文件夹",
   "prefs.bodies_folders_always": "始终显示",
   "prefs.bodies_folders_never": "不显示",

@@ -1245,4 +1245,31 @@ fn docked_assistant_beside_an_inverted_view_area_does_not_panic() {
         crate::viewport::refresh_layout(&mut h.app, &ctx);
         assert!(h.app.viewport.layout.is_some(), "{side}: a layout for the next frame");
     }
+#[test]
+fn larger_icons_without_labels_keep_the_full_ribbon_height_and_widen_the_buttons() {
+    let mut h = Harness::new();
+    h.call("ui.resize", json!({"width":1400,"height":900}));
+    h.settle();
+    let labelled = rect_of("toolbar").unwrap();
+    h.call("ui.prefs", json!({"ribbon_labels":false}));
+    h.settle();
+    let compact = rect_of("toolbar").unwrap();
+    let small = rect_of("button:sketch.create").unwrap();
+    h.call("ui.prefs", json!({"ribbon_big_icons":true}));
+    h.settle();
+    let big = rect_of("toolbar").unwrap();
+    let wide = rect_of("button:sketch.create").unwrap();
+    assert!(big.height() > compact.height(), "big icons need a taller ribbon");
+    assert!((big.height() - labelled.height()).abs() < 1.0, "as tall as with labels");
+    assert!(wide.width() > small.width() && wide.height() > small.height(), "{wide:?} vs {small:?}");
+    h.step(&json!({"click":{"handle":"button:sketch.create"}})).unwrap();
+    assert!(h.app.dialog.is_some(), "the big icon still starts Create Sketch");
+    // With labels, the preference does not apply but is kept.
+    h.call("ui.prefs", json!({"ribbon_labels":true}));
+    h.settle();
+    assert!((rect_of("toolbar").unwrap().height() - labelled.height()).abs() < 1.0);
+    let mut restored = crate::SolveApp::new(Default::default(), Default::default());
+    restored.load_prefs(&h.app.prefs());
+    assert!(restored.preferences.ribbon_big_icons);
+    assert!(!crate::prefs::lenient(&json!({})).ribbon_big_icons);
 }

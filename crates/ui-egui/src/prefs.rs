@@ -1112,6 +1112,8 @@ preference_settings! {
     /// Leave the commands the ribbon shows as buttons (pinned ones) out of its panel drop-downs,
     /// which then list only the rest (#4739).
     ribbon_menus_skip_pinned: bool = false, PAGE_INTERFACE => check_tr("ui.ribbon_menus_skip_pinned");
+    /// Without labels: larger icons in a taller ribbon instead of the compact strip.
+    ribbon_big_icons: bool = false, PAGE_INTERFACE;
     /// Interface scale (1 = 100 %).
     ui_scale: f32 = 1.0, PAGE_INTERFACE, accept(0.5..=2.5);
     /// Interface font: an installed font family (or a font file), or empty for the built-in one
@@ -5484,6 +5486,7 @@ mod tests {
             ("toast_place", json!("centre"), PAGE_INTERFACE),
             ("ribbon_icon_grid", json!(true), PAGE_INTERFACE),
             ("ribbon_menus_skip_pinned", json!(true), PAGE_INTERFACE),
+            ("ribbon_big_icons", json!(true), PAGE_INTERFACE),
             ("timeline_left", json!(true), PAGE_INTERFACE),
             ("timeline_under_browser", json!(true), PAGE_INTERFACE),
             ("history_sketches", json!("under_feature"), PAGE_INTERFACE),

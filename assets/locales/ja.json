@@ -2113,6 +2113,7 @@
   "prefs.auto_operation_note": "フィーチャーのウィンドウは、新しい形状が何に接するかから結合・新規ボディ・切り取りを選びます（手動で選ぶまで）。オフ：開いたときの操作のままです。",
   "prefs.axes": "軸",
   "prefs.axis": "軸",
+  "prefs.big_icons": "大きいアイコン",
   "prefs.bodies_folders": "ボディフォルダー",
   "prefs.bodies_folders_always": "常に表示",
   "prefs.bodies_folders_never": "表示しない",
