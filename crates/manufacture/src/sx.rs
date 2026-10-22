@@ -40,6 +40,7 @@ impl Slicer for SxSlicer {
         let mesh = Mesh { name: "solidcraft".into(), parts, ..Mesh::default() };
         // The parts go to the middle of the profile's bed, as the desktop slicers do.
         let plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
+        let offset = plate.objects.first().map_or([0.0; 3], |o| [o.transform[12], o.transform[13], o.transform[14]]);
         let out = api::slice(&plate, &config, &SliceOptions::default()).map_err(|e| match e {
             api::Error::Blocked(why) | api::Error::Clearance(why) => Error::Unsafe(why),
             other => Error::Slice(other.to_string()),
@@ -88,6 +89,7 @@ impl Slicer for SxSlicer {
             toolpaths: toolpaths(&out),
             bed: config.bed_rect().map(|v| v as f32),
             printable_height: config.printable_height as f32,
+            offset,
         })
     }
 }

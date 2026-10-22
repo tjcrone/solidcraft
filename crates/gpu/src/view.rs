@@ -3810,6 +3810,10 @@ impl Renderer {
         pass.set_bind_group(0, scene_bind(h, &res.bind), &[]);
         tris(pass, &res.trans, &h.trans);
         tris(pass, &res.guide_trans, &h.guide_trans);
+        // The main scene's reference planes too (the Print preview's shell of the whole part).
+        pass.set_bind_group(0, scene_bind(m, &res.bind), &[]);
+        tris(pass, &res.guide_trans, &m.guide_trans);
+        pass.set_bind_group(0, scene_bind(h, &res.bind), &[]);
         tris(pass, &res.xray, &h.xray);
         pass.set_bind_group(0, scene_bind(pv, &res.bind), &[]);
         tris(pass, &res.xray, &pv.xray);
