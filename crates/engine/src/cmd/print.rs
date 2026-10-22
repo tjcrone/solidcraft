@@ -24,6 +24,9 @@ const PAUSE: &str = "print.pause";
 const RESUME: &str = "print.resume";
 const HEAT: &str = "print.heat";
 const WEBCAMS: &str = "print.webcams";
+const SETTINGS_GET: &str = "print.settings.get";
+const SETTINGS_SET: &str = "print.settings.set";
+const SETTINGS_CLEAR: &str = "print.settings.clear";
 /// Most degrees a nozzle or bed may be asked for.
 const MAX_NOZZLE_C: f64 = 350.0;
 const MAX_BED_C: f64 = 150.0;
@@ -32,16 +35,16 @@ const MAX_BED_C: f64 = 150.0;
 const MAX_PREVIEW_POINTS: usize = 2_000_000;
 
 pub static COMMANDS: &[CommandSpec] = &[
-    CommandSpec::new(SLICE, "Slice", slice).noundo().at("PRINT", "SLICE").icon("mesh_export").params(
-        "path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files'; bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written",
+    CommandSpec::new(SLICE, "Slice", slice).noundo().at("SLICE", "SLICE").icon("mesh_export").params(
+        "path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files' and the design's own overrides (print.settings.set); bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written",
     ),
     CommandSpec::new(PREVIEW, "Preview Toolpaths", preview).noundo().doc_only().icon("inspect").params(
         "layer?: index (0 = first) → stale (the design changed since the slice), slicer, layers, segments, time_s, filament_mm, filament_g, bed: [min_x, min_y, max_x, max_y], printable_height, offset: [x, y, z] (plate coordinates = design coordinates + offset; the toolpaths, bounds and bed are plate coordinates, as the G-code is), bounds: {min: [x, y, z], max: [x, y, z]}, file_beads: {count, length_mm} (beads the start and end templates lay on the bed), z: [top of each layer], features: [{feature, label, paths, length_mm}]; with layer: layer: {index, z, height, time_s, paths: [{feature, tool, width_mm, speed_mm_s, points: [[x, y], …]}]}. Needs a print.slice in this session",
     ),
-    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("PRINT", "SLICE").icon("export").params(
+    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("SLICE", "SLICE").icon("export").params(
         "path: the .gcode file to write with the G-code of the session's last print.slice → path, bytes, stale (the design changed since the slice)",
     ),
-    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().at("PRINT", "PRINTER").icon("send").params(
+    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().at("SLICE", "PRINTER").icon("send").params(
         "name?: the file name on the printer (default: the design's name; always ends in .gcode); start?: bool (print it at once; default false) → job, name, bytes, start. Sends the session's last print.slice to the installed printer in the background; print.job reports progress. Refused while the design has changed since the slice, and without a printer",
     ),
     CommandSpec::new(JOB, "Printer Job", job).noundo().doc_only().icon("list").params(
@@ -50,7 +53,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(STATUS, "Printer Status", status).noundo().doc_only().icon("inspect").params(
         "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message. Never waits on the network: the host's latest answer",
     ),
-    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("PRINT", "PRINTER").icon("stop").params(
+    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("SLICE", "PRINTER").icon("stop").params(
         "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
     ),
     CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("PRINTER", "PRINT").icon("pause").params(
@@ -65,7 +68,80 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(WEBCAMS, "Printer Cameras", webcams).noundo().doc_only().icon("list").params(
         "No parameters → webcams: [{name, stream_url, snapshot_url, enabled, rotation, flip_horizontal, flip_vertical}], as the printer lists them",
     ),
+    CommandSpec::new(SETTINGS_GET, "Print Settings", settings_get).noundo().doc_only().icon("settings").params(
+        "config?: path, or [paths], of the settings files; keys?: [names] (default: the design's overrides and every key of the files) → settings: {key: {value, source: design | file | default, file?}}, overlay: {key: value} (the design's own overrides)",
+    ),
+    CommandSpec::new(SETTINGS_SET, "Set Print Settings", settings_set).doc_only().icon("settings").params(
+        "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
+    ),
+    CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
 ];
+
+fn settings_get(s: &mut Session, p: &Value) -> Result<Value> {
+    let (files, from) = config_files(p, SETTINGS_GET)?;
+    let overlay = &s.doc.print.overlay;
+    let keys: Vec<String> = match p.get("keys") {
+        None | Some(Value::Null) => files.keys().chain(overlay.keys()).cloned().collect::<std::collections::BTreeSet<_>>().into_iter().collect(),
+        Some(Value::Array(list)) => {
+            list.iter().map(|k| k.as_str().map(str::to_string).ok_or_else(|| bad(SETTINGS_GET, "`keys` must be names"))).collect::<Result<_>>()?
+        }
+        Some(_) => return Err(bad(SETTINGS_GET, "`keys` must be a list of names")),
+    };
+    if keys.len() > 2000 {
+        return Err(bad(SETTINGS_GET, "too many keys"));
+    }
+    let mut settings = Map::new();
+    for key in keys {
+        let entry = if let Some(v) = overlay.get(&key) {
+            json!({"value": v, "source": "design"})
+        } else if let Some(v) = files.get(&key) {
+            json!({"value": v, "source": "file", "file": from.get(&key)})
+        } else {
+            json!({"value": Value::Null, "source": "default"})
+        };
+        settings.insert(key, entry);
+    }
+    Ok(json!({"settings": settings, "overlay": overlay}))
+}
+
+fn settings_set(s: &mut Session, p: &Value) -> Result<Value> {
+    use solidcraft_doc::print_settings::PrintSettings;
+    let set = p.get("set").and_then(Value::as_object).ok_or_else(|| bad(SETTINGS_SET, "`set` must be an object of settings"))?;
+    if set.is_empty() {
+        return Err(bad(SETTINGS_SET, "`set` is empty"));
+    }
+    let mut settings = (*s.doc.print).clone();
+    for (key, value) in set {
+        PrintSettings::validate_key(key).map_err(|e| bad(SETTINGS_SET, e.to_string()))?;
+        if value.is_null() {
+            settings.overlay.remove(key);
+        } else {
+            PrintSettings::validate_value(key, value).map_err(|e| bad(SETTINGS_SET, e.to_string()))?;
+            settings.overlay.insert(key.clone(), value.clone());
+        }
+    }
+    settings.validate().map_err(|e| bad(SETTINGS_SET, e.to_string()))?;
+    if settings != *s.doc.print {
+        s.doc_mut().print = std::sync::Arc::new(settings);
+    }
+    Ok(json!({"overlay": s.doc.print.overlay}))
+}
+
+fn settings_clear(s: &mut Session, p: &Value) -> Result<Value> {
+    let keys = string_list(p, "keys");
+    let mut settings = (*s.doc.print).clone();
+    if keys.is_empty() {
+        settings.overlay.clear();
+    } else {
+        for key in &keys {
+            settings.overlay.remove(key);
+        }
+    }
+    if settings != *s.doc.print {
+        s.doc_mut().print = std::sync::Arc::new(settings);
+    }
+    Ok(json!({"overlay": s.doc.print.overlay}))
+}
 
 fn pause(s: &mut Session, _p: &Value) -> Result<Value> {
     let job = host(s, PAUSE)?.script("PAUSE").map_err(|e| EngineError::Other(format!("{PAUSE}: {e}")))?;
@@ -166,7 +242,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
         Some(Value::String(x)) if !x.trim().is_empty() && x.len() < 4096 => Some(x.as_str()),
         Some(_) => return Err(bad(SLICE, "`path` must be a file path")),
     };
-    let config = config_text(p)?;
+    let config = config_text(s, p)?;
     let bodies = string_list(p, "bodies");
     let parts = parts(s, &bodies)?;
     let slicer = solidcraft_manufacture::default_slicer();
@@ -271,37 +347,45 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"path": path, "bytes": held.sliced.gcode.len(), "stale": held.stale(&s.doc)}))
 }
 
-/// The settings as one JSON object text: the files `config` names, which may not define a key
-/// twice, with `settings` laid over them.
-fn config_text(p: &Value) -> Result<String> {
+/// The settings files `config` names, read as one map that may not define a key twice, and
+/// which file each key came from.
+fn config_files(p: &Value, cmd: &str) -> Result<(Map<String, Value>, Map<String, Value>)> {
     let paths: Vec<&str> = match p.get("config") {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::String(s)) => vec![s.as_str()],
         Some(Value::Array(list)) => {
-            list.iter().map(|v| v.as_str().ok_or_else(|| bad(SLICE, "`config` must be a path or a list of paths"))).collect::<Result<_>>()?
+            list.iter().map(|v| v.as_str().ok_or_else(|| bad(cmd, "`config` must be a path or a list of paths"))).collect::<Result<_>>()?
         }
-        Some(_) => return Err(bad(SLICE, "`config` must be a path or a list of paths")),
+        Some(_) => return Err(bad(cmd, "`config` must be a path or a list of paths")),
     };
     let mut config: Map<String, Value> = Map::new();
     let mut from: Map<String, Value> = Map::new();
     for path in paths {
         if path.trim().is_empty() || path.len() >= 4096 {
-            return Err(bad(SLICE, "`config` paths must not be empty"));
+            return Err(bad(cmd, "`config` paths must not be empty"));
         }
         let bytes = solidcraft_io::vfs::read(path, MAX_CONFIG_BYTES).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
         let map = match serde_json::from_slice::<Value>(&bytes) {
             Ok(Value::Object(map)) => map,
-            Ok(_) => return Err(bad(SLICE, format!("{path}: the settings file must hold a JSON object of setting keys"))),
-            Err(e) => return Err(bad(SLICE, format!("{path}: {e}"))),
+            Ok(_) => return Err(bad(cmd, format!("{path}: the settings file must hold a JSON object of setting keys"))),
+            Err(e) => return Err(bad(cmd, format!("{path}: {e}"))),
         };
         for (k, v) in map {
             if let Some(Value::String(earlier)) = from.get(&k) {
-                return Err(bad(SLICE, format!("setting `{k}` is in both {earlier} and {path}; a key belongs to one file")));
+                return Err(bad(cmd, format!("setting `{k}` is in both {earlier} and {path}; a key belongs to one file")));
             }
             from.insert(k.clone(), Value::String(path.to_string()));
             config.insert(k, v);
         }
     }
+    Ok((config, from))
+}
+
+/// The settings as one JSON object text: the files `config` names, the design's own overrides
+/// over them, and `settings` over both.
+fn config_text(s: &Session, p: &Value) -> Result<String> {
+    let (mut config, _) = config_files(p, SLICE)?;
+    config.extend(s.doc.print.overlay.iter().map(|(k, v)| (k.clone(), v.clone())));
     match p.get("settings") {
         None | Some(Value::Null) => {}
         Some(Value::Object(over)) => config.extend(over.iter().map(|(k, v)| (k.clone(), v.clone()))),

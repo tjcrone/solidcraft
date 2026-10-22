@@ -50,6 +50,8 @@ pub struct State {
     pub job: Option<u64>,
     /// The "start printing?" question is open.
     confirm_print: bool,
+    /// The settings panel's cached values and drafts.
+    pub settings_panel: crate::print_settings_panel::Cache,
     slot: SceneSlot,
     key: Option<u64>,
     /// What the uploaded scene was made from.
@@ -74,6 +76,7 @@ impl Default for State {
             printer_tried: None,
             job: None,
             confirm_print: false,
+            settings_panel: Default::default(),
             slot: Arc::new(Mutex::new(None)),
             key: None,
             uploaded: None,
@@ -83,7 +86,7 @@ impl Default for State {
 
 /// The Print workspace is showing: its Print tab or its Printer tab.
 pub fn active(app: &SolveApp) -> bool {
-    app.ui.tab == "PRINT" || app.ui.tab == "PRINTER"
+    app.ui.tab == "SLICE" || app.ui.tab == "PRINTER"
 }
 
 /// The colour a feature's beads are drawn in (straight sRGB). Built in OKLCH with the lightness
@@ -123,7 +126,7 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
         if crate::render_workspace::active(app) {
             crate::render_workspace::enter(app, false)?;
         }
-        app.ui.tab = "PRINT".into();
+        app.ui.tab = "SLICE".into();
     } else if active(app) {
         app.ui.tab = "MODEL".into();
     }
@@ -406,6 +409,9 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                             }
                         });
                     }
+                    ui.separator();
+                    ui.heading(app.tr("print.settings_title"));
+                    crate::print_settings_panel::rows(app, ui);
                     ui.add_space(6.0);
                     if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Normal).clicked() {
                         slice(app);
