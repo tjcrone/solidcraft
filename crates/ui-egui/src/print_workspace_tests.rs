@@ -3,7 +3,12 @@ use solidcraft_engine::manufacture::{Path, Sliced};
 
 fn held_with(layers: Vec<Layer>) -> HeldSlice {
     HeldSlice {
-        sliced: Sliced { toolpaths: Toolpaths { layers }, bed: [0.0, 0.0, 100.0, 100.0], printable_height: 100.0, ..Default::default() },
+        sliced: Sliced {
+            toolpaths: Toolpaths { layers, file_beads: Vec::new() },
+            bed: [0.0, 0.0, 100.0, 100.0],
+            printable_height: 100.0,
+            ..Default::default()
+        },
         doc: Arc::new(solidcraft_engine::doc::Document::new("t")),
         bodies: Vec::new(),
         config: "{}".into(),

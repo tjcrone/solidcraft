@@ -8,12 +8,13 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod file_beads;
 pub mod reach;
 mod sx;
 pub mod toolpaths;
 
 pub use sx::SxSlicer;
-pub use toolpaths::{Feature, Layer, Path, Toolpaths};
+pub use toolpaths::{Feature, FileBead, Layer, Path, Toolpaths};
 
 /// Most triangles one job may carry: a design that tessellates past this is refused, not sliced.
 pub const MAX_TRIANGLES: usize = 50_000_000;
