@@ -132,3 +132,9 @@ pub fn default_slicer() -> impl Slicer {
 #[cfg(test)]
 #[path = "slice_tests.rs"]
 mod tests;
+
+/// True when the slicer reads `key` (an OrcaSlicer setting name) in some way, so a profile or a
+/// design that sets it changes the print. The browser build cannot tell and says yes.
+pub fn engine_reads(key: &str) -> bool {
+    sx_core::config::is_used_key(key)
+}

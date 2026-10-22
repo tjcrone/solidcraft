@@ -378,7 +378,7 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
         ids: &["render.export", "render.result.regrade", "render.compare", "render.status", "render.backends"],
     },
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
-    Section { tab: "SLICE", panel: "SLICE", promoted: 2, ids: &["print.slice", "print.save"] },
+    Section { tab: "SLICE", panel: "SLICE", promoted: 3, ids: &["print.slice", "print.settings.set", "print.save"] },
     Section { tab: "SLICE", panel: "PRINTER", promoted: 2, ids: &["print.upload", "print.cancel"] },
     Section { tab: "PRINTER", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
 ];

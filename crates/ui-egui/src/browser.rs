@@ -1813,6 +1813,10 @@ fn doc_settings(app: &mut SolveApp, ui: &mut egui::Ui, depth: usize) {
             app.start("document.metadata");
         }
     }
+    let print = crate::i18n::format("print.browser_row", &[("n", &app.session.doc.print.overlay.len().to_string())]);
+    if draw_row(ui, ui.id().with("print_settings"), &Row { depth: depth + 1, icon: "ws_print", label: &print, ..Default::default() }).clicked {
+        app.start("print.settings.set");
+    }
 }
 
 /// The origin point, axes and planes, as `(key, icon, thing lit for it)`.
