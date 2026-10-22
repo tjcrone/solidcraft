@@ -159,3 +159,13 @@ fn a_degenerate_bed_draws_no_grid() {
     // Grid lines at 0, 10, 20 in X and 0, 10 in Y, plus the four edges.
     assert_eq!(gpu.under.len(), (3 + 2 + 4) * LINE_BYTES);
 }
+
+#[test]
+fn the_view_moves_by_the_change_in_placement() {
+    let d = view_shift([0.0; 3], [118.0, 118.0, 0.0]);
+    assert_eq!((d.x, d.y, d.z), (118.0, 118.0, 0.0));
+    let back = view_shift([118.0, 118.0, 0.0], [0.0; 3]);
+    assert_eq!((back.x, back.y, back.z), (-118.0, -118.0, 0.0));
+    let between = view_shift([118.0, 118.0, 0.0], [120.0, 110.0, 1.0]);
+    assert_eq!((between.x, between.y, between.z), (2.0, -8.0, 1.0));
+}

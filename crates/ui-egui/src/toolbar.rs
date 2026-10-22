@@ -2344,6 +2344,9 @@ pub fn shortcuts(app: &mut SolveApp, ctx: &egui::Context) {
         if k != Key::Escape {
             app.last_escape = None;
         }
+        if shown && crate::print_workspace::layer_key(app, k, mods) {
+            continue;
+        }
         if shown && (crate::keymap::drag_zoom_key(app, k, mods) || crate::navigation::view_key(app, ctx, k, mods, repeat)) {
             continue;
         }
