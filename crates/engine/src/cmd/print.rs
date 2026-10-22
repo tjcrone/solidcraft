@@ -68,10 +68,10 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(WEBCAMS, "Printer Cameras", webcams).noundo().doc_only().icon("list").params(
         "No parameters → webcams: [{name, stream_url, snapshot_url, enabled, rotation, flip_horizontal, flip_vertical}], as the printer lists them",
     ),
-    CommandSpec::new(SETTINGS_GET, "Print Settings", settings_get).noundo().doc_only().icon("settings").params(
+    CommandSpec::new(SETTINGS_GET, "Read Print Settings", settings_get).noundo().doc_only().icon("settings").params(
         "config?: path, or [paths], of the settings files; keys?: [names] (default: the design's overrides and every key of the files) → settings: {key: {value, source: design | file | default, file?}}, overlay: {key: value} (the design's own overrides)",
     ),
-    CommandSpec::new(SETTINGS_SET, "Set Print Settings", settings_set).doc_only().icon("settings").params(
+    CommandSpec::new(SETTINGS_SET, "Print Settings", settings_set).doc_only().at("SLICE", "SLICE").icon("settings").params(
         "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
     ),
     CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
