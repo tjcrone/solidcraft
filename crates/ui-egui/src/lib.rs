@@ -209,6 +209,7 @@ mod primitive_placement;
 #[cfg(test)]
 mod primitive_units_tests;
 mod print_face_ui;
+pub mod print_settings_panel;
 pub mod print_workspace;
 pub mod printer_dashboard;
 pub(crate) mod quick_measure;

@@ -66,6 +66,7 @@ pub use profile_refs::{capture_profile_selection, profile_fallback_notes, profil
 pub mod plastic;
 mod print_face;
 pub use print_face::PrintFace;
+pub mod print_settings;
 pub mod project;
 mod project3d;
 pub mod render_aging;

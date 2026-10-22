@@ -2684,6 +2684,9 @@ pub struct Document {
     /// Named image intent and immutable embedded HDR sources. Active jobs and device state are not saved.
     #[serde(default, skip_serializing_if = "crate::render_settings::RenderSettings::is_empty")]
     pub render: std::sync::Arc<crate::render_settings::RenderSettings>,
+    /// The slicer settings this design overrides when it is printed (`print_settings`).
+    #[serde(default, skip_serializing_if = "crate::print_settings::PrintSettings::is_empty")]
+    pub print: std::sync::Arc<crate::print_settings::PrintSettings>,
     #[serde(default = "default_format")]
     pub format: String,
     /// The changes of `format` this design has while they are pending (no release has fixed
@@ -3043,6 +3046,7 @@ impl Document {
     pub fn new(name: &str) -> Self {
         Document {
             render: Default::default(),
+            print: Default::default(),
             format: default_format(),
             format_pending: crate::format::pending_names(),
             name: name.into(),

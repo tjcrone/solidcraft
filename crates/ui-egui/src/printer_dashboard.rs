@@ -136,7 +136,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                     rows(app, ui);
                     ui.separator();
                     if crate::ui_kit::button(ui, app.tr("printer.back_to_print"), crate::ui_kit::Button::Normal).clicked() {
-                        app.ui.tab = "PRINT".into();
+                        app.ui.tab = "SLICE".into();
                     }
                 });
             });

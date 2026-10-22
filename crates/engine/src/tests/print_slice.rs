@@ -183,3 +183,47 @@ fn a_refused_slice_leaves_the_earlier_one_in_place() {
     assert!(r.is_err(), "{r:?}");
     assert_eq!(run(&mut s, "print.preview", json!({}))["layers"], 100);
 }
+
+#[test]
+fn the_design_keeps_its_own_print_settings_over_the_files_and_under_the_call() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 24}));
+    let config = out("overlay.json");
+    std::fs::write(&config, r#"{"layer_height": "0.3", "initial_layer_print_height": "0.3", "gcode_flavor": "klipper"}"#).unwrap();
+    // Nothing overridden: the files decide.
+    let g = run(&mut s, "print.settings.get", json!({"config": config}));
+    assert_eq!(g["settings"]["layer_height"]["source"], "file", "{g}");
+    assert_eq!(g["settings"]["layer_height"]["value"], "0.3");
+    assert_eq!(run(&mut s, "print.settings.get", json!({"config": config, "keys": ["wall_loops"]}))["settings"]["wall_loops"]["source"], "default");
+    assert_eq!(run(&mut s, "print.slice", json!({"config": config}))["layers"], 80);
+    // The design overrides the layer height: 0.2 mm makes 120 layers, and the change is undoable.
+    let r = run(&mut s, "print.settings.set", json!({"set": {"layer_height": "0.2", "initial_layer_print_height": "0.2"}}));
+    assert_eq!(r["overlay"]["layer_height"], "0.2", "{r}");
+    assert_eq!(run(&mut s, "print.slice", json!({"config": config}))["layers"], 120);
+    let g = run(&mut s, "print.settings.get", json!({"config": config, "keys": ["layer_height"]}));
+    assert_eq!(g["settings"]["layer_height"]["source"], "design");
+    assert!(s.is_dirty());
+    // An explicit setting on the call still wins over the design.
+    assert_eq!(
+        run(&mut s, "print.slice", json!({"config": config, "settings": {"layer_height": 0.3, "initial_layer_print_height": 0.3}}))["layers"],
+        80
+    );
+    run(&mut s, "edit.undo", json!({}));
+    assert!(s.doc.print.overlay.is_empty());
+    run(&mut s, "edit.redo", json!({}));
+    assert_eq!(s.doc.print.overlay.len(), 2);
+    // Null removes one key; clear removes the rest; bad keys and values are refused.
+    run(&mut s, "print.settings.set", json!({"set": {"initial_layer_print_height": null}}));
+    assert_eq!(s.doc.print.overlay.len(), 1);
+    for bad in [json!({}), json!({"set": {}}), json!({"set": {"Layer": 1}}), json!({"set": {"layer_height": {"a": 1}}}), json!({"set": 5})] {
+        assert!(s.execute("print.settings.set", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(run(&mut s, "print.settings.clear", json!({}))["overlay"], json!({}));
+    // The overlay survives a save and a load.
+    run(&mut s, "print.settings.set", json!({"set": {"sparse_infill_density": "20%", "enable_support": "1"}}));
+    let text = serde_json::to_string(&*s.doc).unwrap();
+    assert!(text.contains("sparse_infill_density"), "{text}");
+    let back: solidcraft_doc::Document = serde_json::from_str(&text).unwrap();
+    assert_eq!(back.print.overlay.len(), 2);
+    std::fs::remove_file(&config).ok();
+}
