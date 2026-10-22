@@ -33,6 +33,7 @@ mod desktop_theme;
 mod desktop_transparency;
 mod device_lost;
 mod gpu_startup;
+mod moonraker;
 #[cfg(target_os = "windows")]
 mod native_crash;
 #[cfg(target_os = "macos")]
@@ -1233,6 +1234,9 @@ fn services(cc: &eframe::CreationContext<'_>, folder: &DialogFolder) -> Services
         reduce_transparency: None,
         http_get: Some(std::sync::Arc::new(http_get)),
         http_download: Some(std::sync::Arc::new(http_download)),
+        printer_host: Some(std::sync::Arc::new(|url: &str| {
+            moonraker::Moonraker::new(url).map(|h| std::sync::Arc::new(h) as std::sync::Arc<dyn solidcraft_engine::printer_host::PrinterHost>)
+        })),
         // Already an installed app: only the browser build offers to install.
         install_app: None,
         persist_design: None,

@@ -11,6 +11,7 @@ use serde_json::json;
 use solidcraft_engine::geom::{Aabb3, Vec3};
 use solidcraft_engine::held_slice::HeldSlice;
 use solidcraft_engine::manufacture::{Feature, Layer, Toolpaths};
+use solidcraft_engine::printer_host::PrinterHost;
 
 use crate::gpu::{Frame, GpuScene, SceneSlot, ViewportCallback};
 use crate::ui_kit::{Container, Edge, Surface};
@@ -28,7 +29,12 @@ const LINE_BYTES: usize = crate::gpu::LINE_SIZE;
 pub struct Settings {
     /// OrcaSlicer-style JSON files (printer, filament, process), in the order given.
     pub config_files: Vec<String>,
+    /// The printer's Moonraker address (`http://printer.local`); empty for no printer.
+    pub printer_url: String,
 }
+
+/// Makes a printer host for a Moonraker address; the desktop app installs it in `Services`.
+pub type MakePrinterHost = Arc<dyn Fn(&str) -> Result<Arc<dyn PrinterHost>, String> + Send + Sync>;
 
 pub struct State {
     pub settings: Settings,
@@ -38,6 +44,12 @@ pub struct State {
     /// The highest layer shown, as an index; `None` shows every layer.
     pub top_layer: Option<usize>,
     pub show_travels: bool,
+    /// The address a host was last made for, so a bad address is reported once.
+    printer_tried: Option<String>,
+    /// The upload or cancel job the panel follows.
+    pub job: Option<u64>,
+    /// The "start printing?" question is open.
+    confirm_print: bool,
     slot: SceneSlot,
     key: Option<u64>,
     /// What the uploaded scene was made from.
@@ -59,6 +71,9 @@ impl Default for State {
             view_offset: [0.0; 3],
             top_layer: None,
             show_travels: false,
+            printer_tried: None,
+            job: None,
+            confirm_print: false,
             slot: Arc::new(Mutex::new(None)),
             key: None,
             uploaded: None,
@@ -207,8 +222,69 @@ pub fn start(app: &mut SolveApp, id: &str) {
     match id {
         "print.slice" => slice(app),
         "print.save" => save(app),
+        "print.upload" => send_to_printer(app, false),
+        "print.cancel" => cancel_print(app),
         _ => {}
     }
+}
+
+/// Install (or drop) the printer host for the settings' address, when it changed.
+fn sync_printer(app: &mut SolveApp) {
+    let url = app.print_workspace.settings.printer_url.trim().trim_end_matches('/').to_string();
+    let current = app.session.printer_host().map(|h| h.info().url);
+    if url.is_empty() {
+        if current.is_some() {
+            app.session.set_printer_host(None);
+        }
+        app.print_workspace.printer_tried = None;
+        return;
+    }
+    if current.as_deref() == Some(url.as_str()) || app.print_workspace.printer_tried.as_deref() == Some(url.as_str()) {
+        return;
+    }
+    app.print_workspace.printer_tried = Some(url.clone());
+    let Some(make) = app.services.printer_host.clone() else { return };
+    match make(&url) {
+        Ok(host) => app.session.set_printer_host(Some(host)),
+        Err(e) => {
+            app.session.set_printer_host(None);
+            app.set_status(e, true);
+        }
+    }
+}
+
+/// Send the held slice to the printer, and start it when `start`.
+pub fn send_to_printer(app: &mut SolveApp, start: bool) {
+    load_settings(app);
+    sync_printer(app);
+    match app.run("print.upload", json!({ "start": start })) {
+        Ok(v) => {
+            app.print_workspace.job = v["job"].as_u64();
+            app.set_status(format!("Sending {}", v["name"].as_str().unwrap_or("the G-code")), false);
+        }
+        Err(e) => app.set_status(e, true),
+    }
+}
+
+pub fn cancel_print(app: &mut SolveApp) {
+    match app.run("print.cancel", json!({})) {
+        Ok(v) => app.print_workspace.job = v["job"].as_u64(),
+        Err(e) => app.set_status(e, true),
+    }
+}
+
+/// The printer's state as the panel words it.
+fn state_label(app: &SolveApp, state: &str) -> String {
+    let key = match state {
+        "standby" => "print.state_standby",
+        "printing" => "print.state_printing",
+        "paused" => "print.state_paused",
+        "complete" => "print.state_complete",
+        "cancelled" => "print.state_cancelled",
+        "error" => "print.state_error",
+        _ => return state.to_string(),
+    };
+    app.tr(key).to_string()
 }
 
 /// Slice the design with the workspace's settings files and show the result.
@@ -344,6 +420,8 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                         }
                     }
                     ui.separator();
+                    printer_rows(app, ui);
+                    ui.separator();
                     if crate::ui_kit::button(ui, app.tr("print.return_design"), crate::ui_kit::Button::Normal).clicked()
                         && let Err(e) = enter(app, false)
                     {
@@ -352,6 +430,117 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 });
             });
         });
+    confirm_print(app, ui.ctx());
+}
+
+/// The "start printing?" question, open from Upload and print.
+fn confirm_print(app: &mut SolveApp, ctx: &egui::Context) {
+    if !app.print_workspace.confirm_print {
+        return;
+    }
+    let name = app.session.print_slice().map(|_| solidcraft_engine::printer_host::gcode_file_name(&app.session.doc.name)).unwrap_or_default();
+    let printer = app.session.printer_host().map(|h| h.info().url).unwrap_or_default();
+    let title = app.tr("print.confirm_print_title").to_string();
+    let body = crate::i18n::format("print.confirm_print_body", &[("name", &name), ("printer", &printer)]);
+    let (closed, action) = crate::ui_kit::Confirm::new(egui::Id::new("sc_print_confirm"), "send", &title)
+        .tone(crate::ui_kit::Tone::Warning)
+        .actions(app.tr("print.confirm_print_ok"), app.tr("ui.cancel"), None)
+        .show(ctx, true, |ui| {
+            crate::ui_kit::text(ui, &body, crate::ui_kit::Text::Report("print_confirm", false));
+        });
+    match action {
+        crate::ui_kit::Action::Ok => {
+            app.print_workspace.confirm_print = false;
+            send_to_printer(app, true);
+        }
+        crate::ui_kit::Action::Cancel | crate::ui_kit::Action::Apply => app.print_workspace.confirm_print = false,
+        crate::ui_kit::Action::None if closed => app.print_workspace.confirm_print = false,
+        crate::ui_kit::Action::None => {}
+    }
+}
+
+/// The printer: its address, what it is doing, and the upload and cancel buttons.
+fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
+    let t = Tokens::get();
+    ui.heading(app.tr("print.printer_title"));
+    ui.label(app.tr("print.printer_url"));
+    let before = app.print_workspace.settings.printer_url.clone();
+    crate::ui_kit::bounded_cell_editor(ui, ui.id().with("print_printer_url"), &mut app.print_workspace.settings.printer_url, "http://", false, 256);
+    if app.print_workspace.settings.printer_url != before {
+        save_settings(app);
+    }
+    wrapped_small(ui, app.tr("print.printer_url_help"));
+    sync_printer(app);
+    let status = match app.run("print.status", json!({})) {
+        Ok(v) => v,
+        Err(e) => {
+            ui.label(e);
+            return;
+        }
+    };
+    if status["installed"] != true {
+        ui.label(app.tr("print.printer_none"));
+        return;
+    }
+    let state = status["state"].as_str().unwrap_or("");
+    if status["reachable"] == true {
+        ui.label(state_label(app, state));
+        let name = status["filename"].as_str().unwrap_or("");
+        if !name.is_empty() && matches!(state, "printing" | "paused") {
+            ui.small(name);
+            let progress = status["progress"].as_f64().unwrap_or(0.0) as f32;
+            crate::ui_kit::progress(ui, "print", progress.clamp(0.0, 1.0));
+            ui.small(format!("{:.0} % · {}", progress * 100.0, hms(status["print_duration_s"].as_f64().unwrap_or(0.0))));
+        }
+        let heater =
+            |v: &serde_json::Value| format!("{:.0} / {:.0} °C", v["temperature"].as_f64().unwrap_or(0.0), v["target"].as_f64().unwrap_or(0.0));
+        ui.small(format!("{} {} · {} {}", app.tr("print.extruder"), heater(&status["extruder"]), app.tr("print.bed"), heater(&status["bed"])));
+    } else {
+        let age = status["age_s"].as_f64();
+        let text = match age {
+            Some(a) => crate::i18n::format("print.unreachable_since", &[("time", &hms(a))]),
+            None => app.tr("print.unreachable").to_string(),
+        };
+        ui.colored_label(t.warning, text);
+        if let Some(e) = status["error"].as_str() {
+            wrapped_small(ui, e);
+        }
+    }
+    // The job the panel follows: an upload or a cancel in flight, then its outcome.
+    if let Some(job) = app.print_workspace.job {
+        match app.run("print.job", json!({ "job": job })) {
+            Ok(j) => {
+                let message = j["message"].as_str().unwrap_or("").to_string();
+                match j["state"].as_str().unwrap_or("") {
+                    "queued" | "running" => {
+                        ui.small(app.tr("print.job_running"));
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+                    }
+                    "done" => {
+                        ui.small(if j["started"] == true { crate::i18n::format("print.job_started", &[("message", &message)]) } else { message });
+                    }
+                    _ => {
+                        ui.colored_label(t.warning, message);
+                    }
+                }
+            }
+            Err(_) => app.print_workspace.job = None,
+        }
+    }
+    let can_upload = app.session.print_slice().is_some_and(|h| !h.stale(&app.session.doc));
+    ui.horizontal(|ui| {
+        if crate::ui_kit::button(ui, app.tr("cmd.print.upload"), crate::ui_kit::Button::Enabled(can_upload)).clicked() {
+            send_to_printer(app, false);
+        }
+        if crate::ui_kit::button(ui, app.tr("print.upload_and_print"), crate::ui_kit::Button::Enabled(can_upload)).clicked() {
+            app.print_workspace.confirm_print = true;
+        }
+    });
+    if matches!(state, "printing" | "paused") && crate::ui_kit::button(ui, app.tr("cmd.print.cancel"), crate::ui_kit::Button::Normal).clicked() {
+        cancel_print(app);
+    }
+    // The status line follows the printer while the workspace is open.
+    ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
 }
 
 fn result_rows(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
