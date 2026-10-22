@@ -11,12 +11,23 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
-use solidcraft_engine::printer_host::{Heater, JobState, PrinterHost, PrinterInfo, PrinterStatus};
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
+use std::sync::atomic::AtomicBool;
+
+use solidcraft_engine::printer_host::{CameraFrame, Heater, JobState, PrinterHost, PrinterInfo, PrinterStatus, Webcam};
 
 const POLL_EVERY: Duration = Duration::from_secs(2);
 const POLL_TIMEOUT: Duration = Duration::from_secs(4);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(180);
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(10);
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(20);
+/// The webcam list is asked for on the first poll and then every so many polls.
+const WEBCAM_POLLS: u64 = 30;
+/// Most bytes one camera frame may be.
+const FRAME_LIMIT: usize = 8 << 20;
+/// A stall this long on the stream reconnects it.
+const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Most bytes of an answer that are read.
 const ANSWER_LIMIT: u64 = 1 << 20;
@@ -30,12 +41,25 @@ struct Shared {
     jobs: Mutex<HashMap<u64, JobState>>,
     next_job: AtomicU64,
     snapshot: Mutex<Snapshot>,
+    polls: AtomicU64,
+    camera: Mutex<Camera>,
 }
 
 #[derive(Default)]
 struct Snapshot {
     status: PrinterStatus,
     last_ok: Option<Instant>,
+    webcams: Vec<Webcam>,
+}
+
+/// The watched stream: which URL, the newest frame, and what went wrong.
+#[derive(Default)]
+struct Camera {
+    url: Option<String>,
+    /// Set while a reader thread should keep going; cleared to stop it.
+    running: Option<Arc<AtomicBool>>,
+    frame: Option<CameraFrame>,
+    error: Option<String>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -70,8 +94,14 @@ impl Moonraker {
         if url.len() > 512 || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Err("the printer address is not a URL".into());
         }
-        let shared =
-            Arc::new(Shared { url, jobs: Mutex::new(HashMap::new()), next_job: AtomicU64::new(0), snapshot: Mutex::new(Snapshot::default()) });
+        let shared = Arc::new(Shared {
+            url,
+            jobs: Mutex::new(HashMap::new()),
+            next_job: AtomicU64::new(0),
+            snapshot: Mutex::new(Snapshot::default()),
+            polls: AtomicU64::new(0),
+            camera: Mutex::new(Camera::default()),
+        });
         let weak = Arc::downgrade(&shared);
         std::thread::Builder::new().name("moonraker-status".into()).spawn(move || poll_loop(&weak)).map_err(|e| e.to_string())?;
         Ok(Moonraker { shared })
@@ -109,8 +139,43 @@ impl Shared {
         id
     }
 
+    /// The camera list, with relative stream addresses made absolute against the printer's URL.
+    fn fetch_webcams(&self) -> Result<Vec<Webcam>, String> {
+        let url = format!("{}/server/webcams/list", self.url);
+        let mut r = agent(POLL_TIMEOUT).get(&url).call().map_err(|e| e.to_string())?;
+        let (status, text) = read_answer(&mut r)?;
+        if !(200..300).contains(&status) {
+            return Err(format!("HTTP {status}: {}", short(&text)));
+        }
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let absolute = |s: &str| {
+            if s.starts_with("http://") || s.starts_with("https://") { s.to_string() } else { format!("{}/{}", self.url, s.trim_start_matches('/')) }
+        };
+        Ok(v["result"]["webcams"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|w| Webcam {
+                name: w["name"].as_str().unwrap_or("Camera").to_string(),
+                stream_url: w["stream_url"].as_str().map(absolute).unwrap_or_default(),
+                snapshot_url: w["snapshot_url"].as_str().map(absolute).unwrap_or_default(),
+                enabled: w["enabled"].as_bool().unwrap_or(true),
+                rotation: u16::try_from(w["rotation"].as_u64().unwrap_or(0) % 360).unwrap_or(0),
+                flip_horizontal: w["flip_horizontal"].as_bool().unwrap_or(false),
+                flip_vertical: w["flip_vertical"].as_bool().unwrap_or(false),
+            })
+            .filter(|w| !w.stream_url.is_empty())
+            .collect())
+    }
+
     /// One status request; its outcome lands in the snapshot either way.
     fn poll(&self) {
+        let n = self.polls.fetch_add(1, Ordering::SeqCst);
+        if n.is_multiple_of(WEBCAM_POLLS)
+            && let Ok(list) = self.fetch_webcams()
+        {
+            lock(&self.snapshot).webcams = list;
+        }
         let url = format!("{}/printer/objects/query?print_stats&display_status&extruder&heater_bed", self.url);
         let result = agent(POLL_TIMEOUT).get(&url).call().map_err(|e| e.to_string()).and_then(|mut r| {
             let (status, text) = read_answer(&mut r)?;
@@ -177,6 +242,18 @@ impl Shared {
         Ok(v["print_started"].as_bool().unwrap_or(false))
     }
 
+    fn send_script(&self, gcode: &str) -> Result<(), String> {
+        let url = format!("{}/printer/gcode/script", self.url);
+        let body = serde_json::json!({ "script": gcode }).to_string();
+        let mut response = agent(SCRIPT_TIMEOUT)
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .send(body.as_bytes())
+            .map_err(|e| format!("no answer from the printer ({e})"))?;
+        let (status, text) = read_answer(&mut response)?;
+        if (200..300).contains(&status) { Ok(()) } else { Err(format!("the printer refused `{gcode}`: HTTP {status} {}", short(&text))) }
+    }
+
     fn send_cancel(&self) -> Result<(), String> {
         let url = format!("{}/printer/print/cancel", self.url);
         let mut response = agent(CANCEL_TIMEOUT).post(&url).send(&[][..]).map_err(|e| format!("no answer from the printer ({e})"))?;
@@ -233,6 +310,66 @@ impl PrinterHost for Moonraker {
         lock(&self.shared.jobs).get(&id).cloned()
     }
 
+    fn webcams(&self) -> Vec<Webcam> {
+        lock(&self.shared.snapshot).webcams.clone()
+    }
+
+    fn script(&self, gcode: &str) -> Result<u64, String> {
+        let gcode = gcode.trim();
+        if gcode.is_empty() || gcode.len() > 4096 || gcode.chars().any(char::is_control) {
+            return Err("the script must be one line of G-code".into());
+        }
+        let id = self.shared.new_job();
+        let shared = self.shared.clone();
+        let gcode = gcode.to_string();
+        std::thread::Builder::new()
+            .name("moonraker-script".into())
+            .spawn(move || {
+                shared.set_job(id, JobState::Running { sent: 0, total: 0 });
+                let state = match shared.send_script(&gcode) {
+                    Ok(()) => JobState::Done { message: format!("{gcode} sent"), started: false },
+                    Err(message) => JobState::Failed { message },
+                };
+                shared.set_job(id, state);
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    fn watch_camera(&self, url: &str, on: bool) {
+        let mut camera = lock(&self.shared.camera);
+        let same = camera.url.as_deref() == Some(url) && camera.running.as_ref().is_some_and(|r| r.load(Ordering::SeqCst));
+        if on && same {
+            return;
+        }
+        if let Some(running) = camera.running.take() {
+            running.store(false, Ordering::SeqCst);
+        }
+        camera.frame = None;
+        camera.error = None;
+        camera.url = on.then(|| url.to_string());
+        if !on {
+            return;
+        }
+        let running = Arc::new(AtomicBool::new(true));
+        camera.running = Some(running.clone());
+        let shared = self.shared.clone();
+        let url = url.to_string();
+        if let Err(e) = std::thread::Builder::new().name("moonraker-camera".into()).spawn(move || stream_loop(&shared, &url, &running)) {
+            camera.error = Some(e.to_string());
+            camera.running = None;
+        }
+    }
+
+    fn camera_frame(&self) -> Result<Option<CameraFrame>, String> {
+        let camera = lock(&self.shared.camera);
+        match (&camera.frame, &camera.error) {
+            (Some(frame), _) => Ok(Some(frame.clone())),
+            (None, Some(e)) => Err(e.clone()),
+            (None, None) => Ok(None),
+        }
+    }
+
     fn status(&self) -> PrinterStatus {
         let snap = lock(&self.shared.snapshot);
         let mut status = snap.status.clone();
@@ -241,9 +378,158 @@ impl PrinterHost for Moonraker {
     }
 }
 
+/// Reads the MJPEG stream at `url` until `running` clears, reconnecting after a failure.
+fn stream_loop(shared: &Shared, url: &str, running: &AtomicBool) {
+    let mut sequence = 0u64;
+    while running.load(Ordering::SeqCst) {
+        let outcome = stream_once(url, running, &mut |jpeg| {
+            sequence += 1;
+            let mut camera = lock(&shared.camera);
+            camera.frame = Some(CameraFrame { sequence, jpeg: Arc::new(jpeg) });
+            camera.error = None;
+        });
+        if !running.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Err(e) = outcome {
+            lock(&shared.camera).error = Some(e);
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// One connection to the stream: an HTTP/1.0 request (so the answer is never chunked), then
+/// the multipart body, one JPEG per part, until the connection ends or `running` clears.
+fn stream_once(url: &str, running: &AtomicBool, frame: &mut dyn FnMut(Vec<u8>)) -> Result<(), String> {
+    let rest = url.strip_prefix("http://").ok_or("only http:// camera streams are supported")?;
+    let (host_port, path) = rest.split_once('/').map_or((rest, "/".to_string()), |(h, p)| (h, format!("/{p}")));
+    let address = if host_port.contains(':') { host_port.to_string() } else { format!("{host_port}:80") };
+    let socket =
+        std::net::ToSocketAddrs::to_socket_addrs(&address).map_err(|e| e.to_string())?.next().ok_or("the camera's address does not resolve")?;
+    let mut stream = TcpStream::connect_timeout(&socket, CONNECT_TIMEOUT).map_err(|e| format!("camera: {e}"))?;
+    stream.set_read_timeout(Some(STREAM_READ_TIMEOUT)).map_err(|e| e.to_string())?;
+    stream
+        .write_all(format!("GET {path} HTTP/1.0\r\nHost: {host_port}\r\nUser-Agent: SolidCraft\r\nConnection: close\r\n\r\n").as_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).map_err(|e| e.to_string())?;
+    if !line.contains(" 200") {
+        return Err(format!("camera: {}", line.trim()));
+    }
+    let mut boundary = None;
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 || line.trim().is_empty() {
+            break;
+        }
+        if let Some((k, v)) = line.split_once(':')
+            && k.eq_ignore_ascii_case("content-type")
+        {
+            boundary = v.split("boundary=").nth(1).map(|b| b.trim().trim_matches('"').to_string());
+        }
+    }
+    let boundary = boundary.ok_or("the camera did not send a multipart stream")?;
+    while running.load(Ordering::SeqCst) {
+        let Some(jpeg) = next_part(&mut reader, &boundary)? else { return Ok(()) };
+        if !jpeg.is_empty() {
+            frame(jpeg);
+        }
+    }
+    Ok(())
+}
+
+/// The next part's body: skips to the boundary, reads the part headers, then the body by its
+/// Content-Length, or up to the next boundary line when there is none. `None` at the stream's end.
+fn next_part(reader: &mut impl BufRead, boundary: &str) -> Result<Option<Vec<u8>>, String> {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
+            return Ok(None);
+        }
+        if line.trim().trim_start_matches("--") == boundary {
+            break;
+        }
+    }
+    let mut length: Option<usize> = None;
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
+            return Ok(None);
+        }
+        if line.trim().is_empty() {
+            break;
+        }
+        if let Some((k, v)) = line.split_once(':')
+            && k.eq_ignore_ascii_case("content-length")
+        {
+            length = v.trim().parse().ok();
+        }
+    }
+    match length {
+        Some(n) if n > FRAME_LIMIT => Err(format!("a camera frame of {n} bytes is past the {FRAME_LIMIT} byte limit")),
+        Some(n) => {
+            let mut body = vec![0u8; n];
+            reader.read_exact(&mut body).map_err(|e| e.to_string())?;
+            Ok(Some(body))
+        }
+        None => {
+            let marker = format!("--{boundary}");
+            let mut body = Vec::new();
+            loop {
+                let mut chunk = Vec::new();
+                if reader.read_until(b'\n', &mut chunk).map_err(|e| e.to_string())? == 0 {
+                    return Ok(if body.is_empty() { None } else { Some(strip_crlf(body)) });
+                }
+                if String::from_utf8_lossy(&chunk).trim() == marker {
+                    return Ok(Some(strip_crlf(body)));
+                }
+                body.extend_from_slice(&chunk);
+                if body.len() > FRAME_LIMIT {
+                    return Err("a camera frame is past the size limit".into());
+                }
+            }
+        }
+    }
+}
+
+fn strip_crlf(mut body: Vec<u8>) -> Vec<u8> {
+    while body.last().is_some_and(|b| *b == b'\r' || *b == b'\n') {
+        body.pop();
+    }
+    body
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multipart_parts_come_out_one_jpeg_at_a_time() {
+        let a = b"\xff\xd8frame-one\xff\xd9";
+        let b = b"\xff\xd8frame-two\xff\xd9";
+        let mut data = Vec::new();
+        data.extend_from_slice(b"--boundarydonotcross\r\nContent-Type: image/jpeg\r\nContent-Length: 13\r\nX-Timestamp: 1.0\r\n\r\n");
+        data.extend_from_slice(a);
+        data.extend_from_slice(b"\r\n--boundarydonotcross\r\nContent-Type: image/jpeg\r\n\r\n");
+        data.extend_from_slice(b);
+        data.extend_from_slice(b"\r\n--boundarydonotcross\r\n");
+        let mut reader = std::io::Cursor::new(data);
+        assert_eq!(next_part(&mut reader, "boundarydonotcross").unwrap_or_else(|e| panic!("{e}")).as_deref(), Some(&a[..]));
+        // Without a length the body runs to the next boundary line; that line is consumed.
+        assert_eq!(next_part(&mut reader, "boundarydonotcross").unwrap_or_else(|e| panic!("{e}")).as_deref(), Some(&b[..]));
+        assert_eq!(next_part(&mut reader, "boundarydonotcross").unwrap_or_else(|e| panic!("{e}")), None);
+        let mut huge = std::io::Cursor::new(b"--b\r\nContent-Length: 99999999\r\n\r\n".to_vec());
+        assert!(next_part(&mut huge, "b").is_err());
+    }
+
+    #[test]
+    fn a_stream_to_nowhere_fails_cleanly() {
+        let running = AtomicBool::new(true);
+        assert!(stream_once("http://127.0.0.1:1/webcam/?action=stream", &running, &mut |_| {}).is_err());
+        assert!(stream_once("https://x/", &running, &mut |_| {}).is_err());
+    }
 
     #[test]
     fn only_http_addresses_make_a_host() {
