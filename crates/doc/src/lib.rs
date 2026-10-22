@@ -106,6 +106,7 @@ pub use profile_refs::profile_selection_indices_lenient;
 pub mod plastic;
 mod print_face;
 pub use print_face::PrintFace;
+pub mod print_settings;
 pub mod project;
 mod project3d;
 pub mod render_aging;
