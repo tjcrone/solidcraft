@@ -46,14 +46,94 @@ pub struct State {
     pub show_travels: bool,
     /// The address a host was last made for, so a bad address is reported once.
     printer_tried: Option<String>,
-    /// The upload or cancel job the panel follows.
-    pub job: Option<u64>,
+    /// The printer job the panels follow: an upload, a cancel, a pause, a resume or a heat.
+    pub job: Option<Job>,
     /// The "start printing?" question is open.
     confirm_print: bool,
     slot: SceneSlot,
     key: Option<u64>,
     /// What the uploaded scene was made from.
     uploaded: Option<Source>,
+}
+
+/// A request the printer host runs in the background, and what it is, so the panels can say
+/// where it stands: Klipper queues a cancel or a pause behind the macro it is running (a start
+/// sequence heating for minutes), and the printer's own state says when it took effect.
+#[derive(Clone, Copy, Debug)]
+pub struct Job {
+    pub id: u64,
+    pub kind: JobKind,
+    pub since: std::time::Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobKind {
+    Upload,
+    Cancel,
+    Pause,
+    Resume,
+    Heat,
+}
+
+impl Job {
+    pub fn new(id: u64, kind: JobKind) -> Self {
+        Self { id, kind, since: std::time::Instant::now() }
+    }
+}
+
+/// What the panels say about a job: the message id, and whether it is a warning. `job_state`
+/// is what print.job reported (`queued`, `running`, `done`, `failed`), `printer_state` what the
+/// printer reports now, `waited` how long since the request went out. A cancel or a pause is
+/// judged by the printer's state, not the request's answer: Moonraker holds the request while
+/// Klipper finishes its macro and may answer late or with an error once the print is gone.
+pub fn job_text(kind: JobKind, job_state: &str, printer_state: &str, waited: std::time::Duration) -> (&'static str, bool) {
+    let pending = matches!(job_state, "queued" | "running");
+    let queued = pending && waited.as_secs() >= 2;
+    match kind {
+        JobKind::Cancel if matches!(printer_state, "cancelled" | "standby" | "complete" | "error") => ("print.cancel_done", false),
+        JobKind::Cancel if queued => ("print.cancel_queued", false),
+        JobKind::Pause if printer_state == "paused" => ("print.pause_done", false),
+        JobKind::Pause if queued => ("print.pause_queued", false),
+        JobKind::Resume if printer_state == "printing" && !pending => ("print.resume_done", false),
+        JobKind::Resume if queued => ("print.resume_queued", false),
+        _ if pending => ("print.job_running", false),
+        _ if job_state == "failed" => ("", true),
+        _ => ("", false),
+    }
+}
+
+/// The line about the job the panels follow, under the printer's state. Clears a job the host
+/// no longer knows.
+pub fn job_line(app: &mut SolveApp, ui: &mut egui::Ui, printer_state: &str) {
+    let Some(job) = app.print_workspace.job else { return };
+    let t = Tokens::get();
+    let reply = match app.run("print.job", json!({ "job": job.id })) {
+        Ok(j) => j,
+        Err(_) => {
+            app.print_workspace.job = None;
+            return;
+        }
+    };
+    let job_state = reply["state"].as_str().unwrap_or("").to_string();
+    let message = reply["message"].as_str().unwrap_or("").to_string();
+    let (id, warning) = job_text(job.kind, &job_state, printer_state, job.since.elapsed());
+    let text = if id.is_empty() {
+        if job.kind == JobKind::Upload && job_state == "done" && reply["started"] == true {
+            crate::i18n::format("print.job_started", &[("message", &message)])
+        } else {
+            message
+        }
+    } else {
+        app.tr(id).to_string()
+    };
+    if warning {
+        ui.colored_label(t.warning, text);
+    } else if !text.is_empty() {
+        ui.small(text);
+    }
+    if matches!(job_state.as_str(), "queued" | "running") {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+    }
 }
 
 /// What the canvas shows: the held slice's toolpaths, or the design's bodies before any slice.
@@ -261,7 +341,7 @@ pub fn send_to_printer(app: &mut SolveApp, start: bool) {
     sync_printer(app);
     match app.run("print.upload", json!({ "start": start })) {
         Ok(v) => {
-            app.print_workspace.job = v["job"].as_u64();
+            app.print_workspace.job = v["job"].as_u64().map(|id| Job::new(id, JobKind::Upload));
             app.set_status(format!("Sending {}", v["name"].as_str().unwrap_or("the G-code")), false);
         }
         Err(e) => app.set_status(e, true),
@@ -270,7 +350,7 @@ pub fn send_to_printer(app: &mut SolveApp, start: bool) {
 
 pub fn cancel_print(app: &mut SolveApp) {
     match app.run("print.cancel", json!({})) {
-        Ok(v) => app.print_workspace.job = v["job"].as_u64(),
+        Ok(v) => app.print_workspace.job = v["job"].as_u64().map(|id| Job::new(id, JobKind::Cancel)),
         Err(e) => app.set_status(e, true),
     }
 }
@@ -493,27 +573,7 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
             wrapped_small(ui, e);
         }
     }
-    // The job the panel follows: an upload or a cancel in flight, then its outcome.
-    if let Some(job) = app.print_workspace.job {
-        match app.run("print.job", json!({ "job": job })) {
-            Ok(j) => {
-                let message = j["message"].as_str().unwrap_or("").to_string();
-                match j["state"].as_str().unwrap_or("") {
-                    "queued" | "running" => {
-                        ui.small(app.tr("print.job_running"));
-                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
-                    }
-                    "done" => {
-                        ui.small(if j["started"] == true { crate::i18n::format("print.job_started", &[("message", &message)]) } else { message });
-                    }
-                    _ => {
-                        ui.colored_label(t.warning, message);
-                    }
-                }
-            }
-            Err(_) => app.print_workspace.job = None,
-        }
-    }
+    job_line(app, ui, state);
     let can_upload = app.session.print_slice().is_some_and(|h| !h.stale(&app.session.doc));
     ui.horizontal(|ui| {
         if crate::ui_kit::button(ui, app.tr("cmd.print.upload"), crate::ui_kit::Button::Enabled(can_upload)).clicked() {
@@ -1118,3 +1178,33 @@ fn bed(gpu: &mut GpuScene, b: [f32; 4]) {
 #[cfg(test)]
 #[path = "print_workspace_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod job_tests {
+    use super::{JobKind, job_text};
+    use std::time::Duration;
+
+    #[test]
+    fn a_cancel_is_judged_by_the_printers_state_not_the_requests_answer() {
+        let soon = Duration::from_millis(500);
+        let later = Duration::from_secs(5);
+        // Just sent: still talking.
+        assert_eq!(job_text(JobKind::Cancel, "running", "printing", soon), ("print.job_running", false));
+        // Held behind the start macro: queued, not lost.
+        assert_eq!(job_text(JobKind::Cancel, "running", "printing", later), ("print.cancel_queued", false));
+        // The printer dropped the print: cancelled, whatever Moonraker answered.
+        for answer in ["running", "done", "failed"] {
+            assert_eq!(job_text(JobKind::Cancel, answer, "standby", later), ("print.cancel_done", false));
+            assert_eq!(job_text(JobKind::Cancel, answer, "cancelled", later), ("print.cancel_done", false));
+        }
+        // A pause the same way; a resume is done once the printer prints again.
+        assert_eq!(job_text(JobKind::Pause, "running", "printing", later), ("print.pause_queued", false));
+        assert_eq!(job_text(JobKind::Pause, "failed", "paused", later), ("print.pause_done", false));
+        assert_eq!(job_text(JobKind::Resume, "done", "printing", later), ("print.resume_done", false));
+        assert_eq!(job_text(JobKind::Resume, "running", "paused", later), ("print.resume_queued", false));
+        // Uploads and heats keep the host's own message; a failure is a warning.
+        assert_eq!(job_text(JobKind::Upload, "done", "printing", later), ("", false));
+        assert_eq!(job_text(JobKind::Upload, "failed", "printing", later), ("", true));
+        assert_eq!(job_text(JobKind::Heat, "running", "standby", later), ("print.job_running", false));
+    }
+}
