@@ -6,7 +6,11 @@
 use egui::{Color32, Sense, vec2};
 use serde_json::json;
 
-use crate::{SolveApp, theme::Tokens};
+use crate::{
+    SolveApp,
+    print_workspace::{Job, JobKind},
+    theme::Tokens,
+};
 
 #[derive(Default)]
 pub struct State {
@@ -28,15 +32,22 @@ pub fn active(app: &SolveApp) -> bool {
 
 /// A ribbon button or shortcut of a printer command.
 pub fn start(app: &mut SolveApp, id: &str) {
-    if matches!(id, "print.pause" | "print.resume" | "print.cancel") {
-        let result = app.run(id, json!({}));
-        follow(app, result);
-    }
+    let kind = match id {
+        "print.pause" => JobKind::Pause,
+        "print.resume" => JobKind::Resume,
+        "print.cancel" => JobKind::Cancel,
+        _ => return,
+    };
+    let result = app.run(id, json!({}));
+    follow(app, result, kind);
 }
 
-fn follow(app: &mut SolveApp, result: Result<serde_json::Value, String>) {
+fn follow(app: &mut SolveApp, result: Result<serde_json::Value, String>, kind: JobKind) {
     match result {
-        Ok(v) => app.print_workspace.job = v["job"].as_u64().or_else(|| v["jobs"].as_array().and_then(|j| j.last()).and_then(|j| j.as_u64())),
+        Ok(v) => {
+            let id = v["job"].as_u64().or_else(|| v["jobs"].as_array().and_then(|j| j.last()).and_then(|j| j.as_u64()));
+            app.print_workspace.job = id.map(|id| Job::new(id, kind));
+        }
         Err(e) => app.set_status(e, true),
     }
 }
@@ -209,22 +220,7 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     if crate::ui_kit::button(ui, app.tr("cmd.print.cancel"), crate::ui_kit::Button::Enabled(reachable && busy)).clicked() {
         start(app, "print.cancel");
     }
-    if let Some(job) = app.print_workspace.job {
-        match app.run("print.job", json!({ "job": job })) {
-            Ok(j) => match j["state"].as_str().unwrap_or("") {
-                "queued" | "running" => {
-                    ui.small(app.tr("print.job_running"));
-                }
-                "done" => {
-                    ui.small(j["message"].as_str().unwrap_or(""));
-                }
-                _ => {
-                    ui.colored_label(t.warning, j["message"].as_str().unwrap_or(""));
-                }
-            },
-            Err(_) => app.print_workspace.job = None,
-        }
-    }
+    crate::print_workspace::job_line(app, ui, &state);
     ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
 }
 
@@ -242,12 +238,12 @@ fn heater_row(app: &mut SolveApp, ui: &mut egui::Ui, label: &str, (temperature, 
         if crate::ui_kit::button(ui, app.tr("printer.set"), crate::ui_kit::Button::Normal).clicked() {
             let params = if nozzle { json!({ "nozzle": wanted }) } else { json!({ "bed": wanted }) };
             let result = app.run("print.heat", params);
-            follow(app, result);
+            follow(app, result, JobKind::Heat);
         }
         if crate::ui_kit::button(ui, app.tr("printer.off"), crate::ui_kit::Button::Enabled(target > 0.0)).clicked() {
             let params = if nozzle { json!({ "nozzle": 0 }) } else { json!({ "bed": 0 }) };
             let result = app.run("print.heat", params);
-            follow(app, result);
+            follow(app, result, JobKind::Heat);
             if nozzle {
                 app.printer_dashboard.nozzle_target = 0.0;
             } else {
