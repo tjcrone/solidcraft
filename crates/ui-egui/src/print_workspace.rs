@@ -700,7 +700,7 @@ fn layer_slider(app: &mut SolveApp, ui: &mut egui::Ui, rect: egui::Rect) {
     let y = track.bottom() - f * track.height();
     let x = track.center().x;
     let painter = ui.painter();
-    painter.line_segment([egui::pos2(x, track.top()), egui::pos2(x, track.bottom())], egui::Stroke::new(4.0, t.panel_header));
+    painter.line_segment([egui::pos2(x, track.top()), egui::pos2(x, track.bottom())], egui::Stroke::new(4.0, t.text_dim));
     painter.line_segment([egui::pos2(x, y), egui::pos2(x, track.bottom())], egui::Stroke::new(4.0, t.accent));
     let r = if response.hovered() || response.dragged() { 9.0 } else { 7.0 };
     painter.circle(egui::pos2(x, y), r, t.accent, egui::Stroke::new(2.0, t.panel));
