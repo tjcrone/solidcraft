@@ -20,8 +20,10 @@ use solidcraft_engine::printer_host::{CameraFrame, Heater, JobState, PrinterHost
 const POLL_EVERY: Duration = Duration::from_secs(2);
 const POLL_TIMEOUT: Duration = Duration::from_secs(4);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(180);
-const CANCEL_TIMEOUT: Duration = Duration::from_secs(10);
-const SCRIPT_TIMEOUT: Duration = Duration::from_secs(20);
+/// A cancel, a pause or a script waits in Klipper's queue behind the running macro (a start
+/// sequence heating for minutes answers nothing until it ends), so the request waits with it;
+/// a printer that is off still fails at the connect timeout.
+const QUEUED_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 /// The webcam list is asked for on the first poll and then every so many polls.
 const WEBCAM_POLLS: u64 = 30;
 /// Most bytes one camera frame may be.
@@ -245,7 +247,7 @@ impl Shared {
     fn send_script(&self, gcode: &str) -> Result<(), String> {
         let url = format!("{}/printer/gcode/script", self.url);
         let body = serde_json::json!({ "script": gcode }).to_string();
-        let mut response = agent(SCRIPT_TIMEOUT)
+        let mut response = agent(QUEUED_TIMEOUT)
             .post(&url)
             .header("Content-Type", "application/json")
             .send(body.as_bytes())
@@ -256,7 +258,7 @@ impl Shared {
 
     fn send_cancel(&self) -> Result<(), String> {
         let url = format!("{}/printer/print/cancel", self.url);
-        let mut response = agent(CANCEL_TIMEOUT).post(&url).send(&[][..]).map_err(|e| format!("no answer from the printer ({e})"))?;
+        let mut response = agent(QUEUED_TIMEOUT).post(&url).send(&[][..]).map_err(|e| format!("no answer from the printer ({e})"))?;
         let (status, text) = read_answer(&mut response)?;
         if (200..300).contains(&status) { Ok(()) } else { Err(format!("the printer refused the cancel: HTTP {status} {}", short(&text))) }
     }
