@@ -387,8 +387,11 @@ pub fn reset_document(app: &mut SolveApp) {
 }
 
 /// What the canvas frames: the toolpaths of the held slice, else the design's bodies.
+/// What the canvas shows, in printer coordinates: the toolpaths on the Slice tab, else the
+/// design where its placement puts it. Fit and the view's depth range frame this.
 pub fn bounds(app: &SolveApp) -> Option<Aabb3> {
-    if let Some(held) = app.session.print_slice()
+    if app.ui.tab == SLICE
+        && let Some(held) = app.session.print_slice()
         && let Some(b) = held.sliced.toolpaths.bounds()
     {
         let mut a = Aabb3::default();
@@ -396,7 +399,16 @@ pub fn bounds(app: &SolveApp) -> Option<Aabb3> {
         a.add(Vec3::new(f64::from(b.max[0]), f64::from(b.max[1]), f64::from(b.max[2])));
         return Some(a);
     }
-    solidcraft_engine::product_scene::extract(&app.session).ok().map(|s| s.bounds).filter(|b| !b.is_empty())
+    let b = solidcraft_engine::product_scene::extract(&app.session).ok().map(|s| s.bounds).filter(|b| !b.is_empty())?;
+    let o = prepare_offset(app).unwrap_or([0.0; 3]);
+    let shift = Vec3::new(f64::from(o[0]), f64::from(o[1]), f64::from(o[2]));
+    // A turned part reaches as far as its footprint's half diagonal in any direction.
+    let reach = b.size().x.hypot(b.size().y) / 2.0;
+    let c = b.center() + shift;
+    let mut a = Aabb3::default();
+    a.add(Vec3::new(c.x - reach, c.y - reach, b.min.z + shift.z));
+    a.add(Vec3::new(c.x + reach, c.y + reach, b.max.z + shift.z));
+    Some(a)
 }
 
 /// A ribbon button or shortcut of a `print.*` command.
