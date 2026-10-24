@@ -390,7 +390,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     let title = app.tr("print.settings_title").to_string();
     let done = app.tr("print.done").to_string();
     let window = ui_kit::Window::new(egui::Id::new("sc_print_settings"), "settings", &title)
-        .cards(10.0 / 3.0)
+        .cards(3.0)
         .page_rows(24.0)
         .page_padding(egui::vec2(Tokens::get().space_16 + Tokens::get().space_4, Tokens::get().space_16))
         .fields()
@@ -489,7 +489,7 @@ fn section_page(app: &mut SolveApp, ui: &mut egui::Ui, section: &Section) {
 
 fn form(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     let t = Tokens::get();
-    ui_kit::settings_form(ui, t.form_label_width * 1.6, add);
+    ui_kit::settings_form(ui, t.form_label_width * 1.4, add);
 }
 
 /// What the slicer refused on the last slice, by key.
@@ -741,11 +741,13 @@ fn advanced_page(app: &mut SolveApp, ui: &mut egui::Ui) {
     form(ui, |ui| {
         ui_kit::row(ui, &key_label, |ui| {
             let id = ui.make_persistent_id("print_custom_key");
-            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_window.custom_key, "layer_height", false, 64);
+            let hint = app.tr("print.key_example").to_string();
+            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_window.custom_key, &hint, false, 64);
         });
         ui_kit::row(ui, &value_label, |ui| {
             let id = ui.make_persistent_id("print_custom_value");
-            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_window.custom_value, "0.2", false, 256);
+            let hint = app.tr("print.value_example").to_string();
+            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_window.custom_value, &hint, false, 256);
         });
     });
     let key = app.print_settings_window.custom_key.trim().to_string();

@@ -532,7 +532,8 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     ui.heading(app.tr("print.printer_title"));
     ui.label(app.tr("print.printer_url"));
     let before = app.print_workspace.settings.printer_url.clone();
-    crate::ui_kit::bounded_cell_editor(ui, ui.id().with("print_printer_url"), &mut app.print_workspace.settings.printer_url, "http://", false, 256);
+    let hint = app.tr("print.printer_url_hint").to_string();
+    crate::ui_kit::bounded_cell_editor(ui, ui.id().with("print_printer_url"), &mut app.print_workspace.settings.printer_url, &hint, false, 256);
     if app.print_workspace.settings.printer_url != before {
         save_settings(app);
     }
@@ -732,39 +733,28 @@ fn layer_slider(app: &mut SolveApp, ui: &mut egui::Ui, rect: egui::Rect) {
     if n < 2 {
         return;
     }
-    let t = Tokens::get();
     // The part of the canvas no card covers, so the slider stays clear of the floating panel.
     let free = crate::viewport_layout::free_rect(crate::shell::content_rect(app, rect), &crate::shell::covered_rects(app));
-    let track = egui::Rect::from_min_max(egui::pos2(free.right() - 44.0, free.top() + 36.0), egui::pos2(free.right() - 16.0, free.bottom() - 36.0));
-    if track.height() < 80.0 {
+    let lane = egui::Rect::from_min_max(egui::pos2(free.right() - 44.0, free.top() + 36.0), egui::pos2(free.right() - 16.0, free.bottom() - 36.0));
+    if lane.height() < 80.0 {
         return;
     }
-    let response = ui.interact(track, ui.id().with("print_layer_slider"), Sense::click_and_drag());
-    crate::scenario::publish_target("print:layer_slider", track);
+    crate::scenario::publish_target("print:layer_slider", lane);
     let mut shown = shown_layer(app, n);
-    if (response.dragged() || response.clicked())
-        && let Some(pos) = response.interact_pointer_pos()
-    {
-        let f = ((track.bottom() - pos.y) / track.height().max(1.0)).clamp(0.0, 1.0);
-        shown = (1.0 + f * (n - 1) as f32).round() as usize;
-    }
-    if response.hovered() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll.abs() > 0.0 {
-            shown = (shown as i64 + if scroll > 0.0 { 1 } else { -1 }).clamp(1, n as i64) as usize;
-        }
-    }
+    let response = crate::ui_kit::vertical_slider(ui, lane, &mut shown, 1..=n);
     let shown = shown.clamp(1, n);
     app.print_workspace.top_layer = (shown < n).then_some(shown - 1);
-    let f = (shown - 1) as f32 / (n - 1) as f32;
-    let y = track.bottom() - f * track.height();
-    let x = track.center().x;
+    layer_readout(ui, &lane, &response.rect, shown, n, held.sliced.toolpaths.layers.get(shown - 1).map_or(0.0, |l| l.z));
+}
+
+/// The layer number and height beside the slider's thumb.
+fn layer_readout(ui: &mut egui::Ui, lane: &egui::Rect, slider: &egui::Rect, shown: usize, n: usize, z: f32) {
+    let t = Tokens::get();
+    // The thumb's centre, as the kit places it: a handle radius inside each end of the lane.
+    let inset = ui.text_style_height(&egui::TextStyle::Body).max(lane.width()) / 2.5;
+    let y = (slider.bottom() - inset) - ((shown - 1) as f32 / (n.max(2) - 1) as f32) * (slider.height() - 2.0 * inset).max(0.0);
+    let x = lane.center().x;
     let painter = ui.painter();
-    painter.line_segment([egui::pos2(x, track.top()), egui::pos2(x, track.bottom())], egui::Stroke::new(4.0, t.text_dim));
-    painter.line_segment([egui::pos2(x, y), egui::pos2(x, track.bottom())], egui::Stroke::new(4.0, t.accent));
-    let r = if response.hovered() || response.dragged() { 9.0 } else { 7.0 };
-    painter.circle(egui::pos2(x, y), r, t.accent, egui::Stroke::new(2.0, t.panel));
-    let z = held.sliced.toolpaths.layers.get(shown - 1).map_or(0.0, |l| l.z);
     let text = format!("{shown}\n{z:.2} mm");
     let galley = painter.layout_no_wrap(text, egui::FontId::proportional(t.font_small), t.text);
     let label =

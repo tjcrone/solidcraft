@@ -151,6 +151,8 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("plugin_tint.rs", 1, "the white tint that shows a plugin's panel tint as its shader answered it"),
     ("navigation.rs", 1, "the navigator's face shading, made from a token"),
     ("drawing_sheet_page.rs", 2, "the drawing sheet moves toward white, else black, to stand off the backdrop"),
+    ("print_workspace.rs", 2, "the toolpath legend's swatches: the preview's own feature palette is the fact"),
+    ("printer_dashboard.rs", 1, "the white tint that carries a camera frame's pixels"),
     ("canvas.rs", 3, "white rings around manipulator handles"),
     (
         "body_gizmo.rs",
