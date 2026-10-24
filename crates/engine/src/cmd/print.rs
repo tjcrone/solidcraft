@@ -9,7 +9,7 @@ use solidcraft_manufacture::{Job, MAX_CONFIG_BYTES, Part, Slicer, Toolpaths};
 
 use super::CommandSpec;
 use crate::held_slice::HeldSlice;
-use crate::params::{bad, bool_, str_, string_list};
+use crate::params::{bad, bool_, string_list};
 use crate::printer_host::gcode_file_name;
 use crate::{EngineError, Result, Session};
 
@@ -236,12 +236,24 @@ fn cancel(s: &mut Session, _p: &Value) -> Result<Value> {
     Ok(json!({"job": job}))
 }
 
+/// The file a command writes its G-code to: an absolute path, so a relative one (a script's
+/// mistake, a hostile value) never lands in whatever folder the process happens to run in.
+fn output_path<'a>(p: &'a Value, cmd: &str) -> Result<Option<&'a str>> {
+    match p.get("path") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(x)) if !x.trim().is_empty() && x.len() < 4096 => {
+            if std::path::Path::new(x.trim()).is_absolute() {
+                Ok(Some(x.as_str()))
+            } else {
+                Err(bad(cmd, "`path` must be an absolute file path"))
+            }
+        }
+        Some(_) => Err(bad(cmd, "`path` must be a file path")),
+    }
+}
+
 fn slice(s: &mut Session, p: &Value) -> Result<Value> {
-    let path = match p.get("path") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(x)) if !x.trim().is_empty() && x.len() < 4096 => Some(x.as_str()),
-        Some(_) => return Err(bad(SLICE, "`path` must be a file path")),
-    };
+    let path = output_path(p, SLICE)?;
     let config = config_text(s, p)?;
     let bodies = string_list(p, "bodies");
     let parts = parts(s, &bodies)?;
@@ -341,7 +353,7 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn save(s: &mut Session, p: &Value) -> Result<Value> {
-    let path = str_(p, "path").filter(|x| !x.trim().is_empty() && x.len() < 4096).ok_or_else(|| bad(SAVE, "`path` is required"))?;
+    let path = output_path(p, SAVE)?.ok_or_else(|| bad(SAVE, "`path` is required"))?;
     let held = held(s, SAVE)?;
     solidcraft_io::vfs::write(path, &held.sliced.gcode).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
     Ok(json!({"path": path, "bytes": held.sliced.gcode.len(), "stale": held.stale(&s.doc)}))
