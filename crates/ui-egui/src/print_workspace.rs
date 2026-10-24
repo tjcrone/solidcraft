@@ -1250,13 +1250,14 @@ fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<GpuScene, String> {
 
 /// How far above a layer's top its travel moves are drawn, mm.
 const TRAVEL_LIFT: f32 = 0.05;
-/// Vertices per straight segment at each detail: the ring's faces, two triangles each.
-const BEAD_VERTS: usize = 6 * 10;
+/// Vertices per straight segment at each detail: the ring's faces, two triangles each. A layer's
+/// bead has no face underneath (the layer below's top is there, or the bed).
+const BEAD_VERTS: usize = 6 * 9;
 const HALF_VERTS: usize = 6 * 5;
 const FLAT_VERTS: usize = 6;
 /// Vertices one join step adds: the ring's faces on the outside of the turn, and a wedge on
-/// the top (and the bottom) to the bead's centre line.
-const JOIN_VERTS: usize = 6 * 4 + 3 * 2;
+/// the top to the bead's centre line.
+const JOIN_VERTS: usize = 6 * 4 + 3;
 const HALF_JOIN_VERTS: usize = 6 * 2 + 3;
 const FLAT_JOIN_VERTS: usize = 3;
 /// Vertices an end cap adds: a fan over the ring.
@@ -1284,6 +1285,10 @@ enum Detail {
 struct Profile {
     ring: Vec<[f32; 2]>,
     closed: bool,
+    /// Whether the face underneath is drawn. A layer's bead sits on the layer below (or the
+    /// bed), whose top is at the same height: drawing both would put two faces at one depth,
+    /// which flicker where the layer clip exposes them. The purge line on the bed keeps its.
+    bottom_face: bool,
     /// The ring's indices on the right (+1) side and the left (-1) side, each a run along the
     /// ring, so the faces between neighbours are the ring's own.
     right: std::ops::Range<usize>,
@@ -1293,7 +1298,7 @@ struct Profile {
 }
 
 impl Profile {
-    fn new(top: f32, bottom: f32, half: f32, detail: Detail) -> Self {
+    fn new(top: f32, bottom: f32, half: f32, detail: Detail, bottom_face: bool) -> Self {
         let mid = f32::midpoint(top, bottom);
         let b = ((top - bottom) * 0.5).max(1e-4);
         let a = half.min(b);
@@ -1318,6 +1323,7 @@ impl Profile {
                     arc(-90.0, -1.0),
                 ],
                 closed: true,
+                bottom_face,
                 right: 0..5,
                 left: 5..10,
                 top,
@@ -1326,18 +1332,22 @@ impl Profile {
             Detail::Half => Self {
                 ring: vec![arc(0.0, 1.0), arc(45.0, 1.0), arc(90.0, 1.0), arc(90.0, -1.0), arc(45.0, -1.0), arc(0.0, -1.0)],
                 closed: false,
+                bottom_face: false,
                 right: 0..3,
                 left: 3..6,
                 top,
                 bottom,
             },
-            Detail::Flat | Detail::Lines => Self { ring: vec![[half, top], [-half, top]], closed: false, right: 0..1, left: 1..2, top, bottom },
+            Detail::Flat | Detail::Lines => {
+                Self { ring: vec![[half, top], [-half, top]], closed: false, bottom_face: false, right: 0..1, left: 1..2, top, bottom }
+            }
         }
     }
 
-    /// How many faces a straight segment has.
+    /// How many faces a straight segment has: the ring's edges, less the closing one underneath
+    /// when that face is not drawn.
     fn edges(&self) -> usize {
-        if self.closed { self.ring.len() } else { self.ring.len().saturating_sub(1) }
+        if self.closed && self.bottom_face { self.ring.len() } else { self.ring.len().saturating_sub(1) }
     }
 
     /// Ring point `k` at `p`, where `n` is the unit vector to the right of the path.
@@ -1398,7 +1408,7 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
             }
             continue;
         }
-        let prof = Profile::new(top, bottom, half, detail);
+        let prof = Profile::new(top, bottom, half, detail, false);
         bead_path(gpu, &prof, &path.points, c);
     }
 }
@@ -1448,7 +1458,7 @@ fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead
     let flush = |gpu: &mut GpuScene, run: &mut Vec<[f32; 2]>, z: f32| {
         if run.len() >= 2 {
             let bottom = (z - z.min(first_height).max(0.05)).max(0.0);
-            bead_path(gpu, &Profile::new(z, bottom, half, detail), run, c);
+            bead_path(gpu, &Profile::new(z, bottom, half, detail, true), run, c);
         }
         run.clear();
     };
@@ -1509,7 +1519,7 @@ fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: 
             quad(gpu, prof.at(v, na, k), prof.at(v, nb, k), prof.at(v, nb, k + 1), prof.at(v, na, k + 1), prof.face_normal(nm, k), c);
         }
         tri(gpu, centre_top, prof.at(v, na, highest), prof.at(v, nb, highest), [0.0, 0.0, 1.0], c);
-        if prof.closed {
+        if prof.closed && prof.bottom_face {
             tri(gpu, centre_bottom, prof.at(v, na, lowest), prof.at(v, nb, lowest), [0.0, 0.0, -1.0], c);
         }
     }
