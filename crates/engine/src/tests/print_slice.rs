@@ -286,3 +286,30 @@ fn the_design_remembers_where_it_sits_on_the_bed() {
     run(&mut s, "print.place", json!({"x": 1}));
     assert!(serde_json::to_string(&*s.doc).unwrap().contains("\"placement\""));
 }
+
+#[test]
+fn a_slice_that_answers_the_same_request_is_reused_until_something_changes() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+    let config = out("reuse-config.json");
+    std::fs::write(&config, r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#).unwrap();
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config}))["current"], false);
+    let first = run(&mut s, "print.slice", json!({"config": config}));
+    assert!(first.get("reused").is_none());
+    let held = s.print_slice().cloned().unwrap_or_else(|| panic!("held"));
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config}))["current"], true);
+    let again = run(&mut s, "print.slice", json!({"config": config}));
+    assert_eq!(again["reused"], true);
+    assert_eq!(again["layers"], first["layers"]);
+    assert!(std::sync::Arc::ptr_eq(&held, s.print_slice().unwrap_or_else(|| panic!("held"))), "the held slice stays the same object");
+    // Inline settings, another body list, a move, or an edited file each make a new request.
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config, "settings": {"wall_loops": 3}}))["current"], false);
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config, "bodies": ["Body1"]}))["current"], false);
+    run(&mut s, "print.place", json!({"x": 5}));
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config}))["current"], false);
+    run(&mut s, "print.slice", json!({"config": config}));
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config}))["current"], true);
+    std::fs::write(&config, r#"{"layer_height": 0.3, "initial_layer_print_height": 0.3, "gcode_flavor": "klipper"}"#).unwrap();
+    assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config}))["current"], false);
+    std::fs::remove_file(&config).ok();
+}
