@@ -166,7 +166,7 @@ impl FileBead {
 }
 
 /// The extents of the toolpaths, millimetres.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Bounds {
     pub min: [f32; 3],
     pub max: [f32; 3],

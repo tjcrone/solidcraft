@@ -23,7 +23,11 @@ fn cube(s: f32) -> Part {
 #[test]
 fn a_cube_slices_to_klipper_gcode_with_one_layer_per_layer_height() {
     let parts = [cube(20.0)];
-    let job = Job { parts: &parts, config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"# };
+    let job = Job {
+        parts: &parts,
+        config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#,
+        placement: Default::default(),
+    };
     let sliced = default_slicer().slice(&job).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(sliced.layers, 100);
     let text = String::from_utf8_lossy(&sliced.gcode);
@@ -40,7 +44,7 @@ fn hostile_parts_and_settings_are_refused_without_a_panic() {
     broken.triangles.push([0, 1, 99]);
     let nan = Part { name: "nan".into(), positions: vec![[f32::NAN; 3]; 3], triangles: vec![[0, 1, 2]] };
     for (parts, config) in [(vec![broken], "{}"), (vec![nan], "{}"), (vec![], "{}"), (vec![cube(10.0)], "not json"), (vec![cube(10.0)], "[1, 2]")] {
-        let job = Job { parts: &parts, config };
+        let job = Job { parts: &parts, config, placement: Default::default() };
         assert!(default_slicer().slice(&job).is_err(), "{config} with {} parts", parts.len());
     }
 }
@@ -49,7 +53,7 @@ fn hostile_parts_and_settings_are_refused_without_a_panic() {
 fn a_flat_part_has_nothing_to_print() {
     let flat = Part { name: "flat".into(), positions: vec![[0., 0., 0.], [10., 0., 0.], [0., 10., 0.]], triangles: vec![[0, 1, 2]] };
     let parts = [flat];
-    let job = Job { parts: &parts, config: "{}" };
+    let job = Job { parts: &parts, config: "{}", placement: Default::default() };
     assert!(default_slicer().slice(&job).is_err());
 }
 
@@ -64,7 +68,7 @@ fn the_engine_version_named_is_the_tag_the_workspace_pins() {
 fn a_value_the_engine_cannot_use_keeps_its_default_and_is_reported_with_the_keys_it_ignores() {
     let parts = [cube(20.0)];
     let config = r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "support_object_xy_distance": "50%", "no_such_setting": 1}"#;
-    let sliced = default_slicer().slice(&Job { parts: &parts, config }).unwrap_or_else(|e| panic!("{e}"));
+    let sliced = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default() }).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(sliced.layers, 100);
     let refused: Vec<&str> = sliced.report.refused.iter().map(|r| r.key.as_str()).collect();
     assert_eq!(refused, ["support_object_xy_distance"], "{:?}", sliced.report);
@@ -86,7 +90,7 @@ fn a_part_that_would_leave_the_printers_volume_is_refused_and_nothing_comes_back
     }
     for part in [wide, tall] {
         let parts = [part];
-        let r = default_slicer().slice(&Job { parts: &parts, config: "{}" });
+        let r = default_slicer().slice(&Job { parts: &parts, config: "{}", placement: Default::default() });
         assert!(matches!(r, Err(Error::Unsafe(_))), "{r:?}");
     }
 }
@@ -100,12 +104,12 @@ fn a_template_that_sends_the_head_outside_the_volume_is_refused() {
         ("machine_end_gcode", "M104 S0\\nM140 S0\\nG1 Z600"),
     ] {
         let config = format!(r#"{{"{key}": "{line}"}}"#);
-        let r = default_slicer().slice(&Job { parts: &parts, config: &config });
+        let r = default_slicer().slice(&Job { parts: &parts, config: &config, placement: Default::default() });
         assert!(matches!(r, Err(Error::Unsafe(_))), "{key}: {line}: {r:?}");
     }
     // The same templates kept inside the volume slice fine.
     let config = r#"{"machine_start_gcode": "G28\nG0 X10 Y10 Z5", "machine_end_gcode": "M104 S0\nM140 S0\nG91\nG1 Z2\nG90\nG0 X0 Y250"}"#;
-    let r = default_slicer().slice(&Job { parts: &parts, config });
+    let r = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default() });
     assert!(r.is_ok(), "{:?}", r.err());
 }
 
@@ -114,21 +118,25 @@ fn a_purge_line_in_the_start_template_comes_back_as_a_file_bead() {
     let parts = [cube(20.0)];
     // A purge across the bed at 0.3 mm, then a lift and a retraction, which are not beads.
     let config = r#"{"machine_start_gcode": "G28\nM83\nG90\nG0 X10 Y10 Z0.3 F6000\nG1 X110 E5 F1200\nG1 E-2 F1800\nG0 Z5"}"#;
-    let sliced = default_slicer().slice(&Job { parts: &parts, config }).unwrap_or_else(|e| panic!("{e}"));
+    let sliced = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default() }).unwrap_or_else(|e| panic!("{e}"));
     let beads = &sliced.toolpaths.file_beads;
     assert_eq!(beads.len(), 1, "{beads:?}");
     assert_eq!(beads[0].points, vec![[10.0, 10.0, 0.3], [110.0, 10.0, 0.3]]);
     assert!((beads[0].length_mm() - 100.0).abs() < 1e-3);
     assert!(beads[0].width_mm > 0.3 && beads[0].width_mm < 0.5, "{}", beads[0].width_mm);
     // The default templates command no bead.
-    let plain = default_slicer().slice(&Job { parts: &parts, config: "{}" }).unwrap_or_else(|e| panic!("{e}"));
+    let plain = default_slicer().slice(&Job { parts: &parts, config: "{}", placement: Default::default() }).unwrap_or_else(|e| panic!("{e}"));
     assert!(plain.toolpaths.file_beads.is_empty());
 }
 
 #[test]
 fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_walls_in_each() {
     let parts = [cube(20.0)];
-    let job = Job { parts: &parts, config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"# };
+    let job = Job {
+        parts: &parts,
+        config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#,
+        placement: Default::default(),
+    };
     let sliced = default_slicer().slice(&job).unwrap_or_else(|e| panic!("{e}"));
     let paths = &sliced.toolpaths;
     assert_eq!(paths.layers.len(), 100);
@@ -178,4 +186,33 @@ fn feature_ids_round_trip_and_cover_every_feature() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), Feature::ALL.len(), "two features share an id");
+}
+
+/// A closed box `x` by `y` by `z` with one corner at the origin.
+fn slab(x: f32, y: f32, z: f32) -> Part {
+    let mut part = cube(1.0);
+    for p in &mut part.positions {
+        *p = [p[0] * x, p[1] * y, p[2] * z];
+    }
+    part
+}
+
+#[test]
+fn a_placement_moves_and_turns_the_part_on_the_bed() {
+    let parts = [slab(20.0, 10.0, 5.0)];
+    let config = r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#;
+    let slice = |placement: Placement| default_slicer().slice(&Job { parts: &parts, config, placement });
+    let centred = slice(Placement::default()).unwrap_or_else(|e| panic!("{e}"));
+    let moved = slice(Placement { x: 30.0, y: -20.0, rotation_deg: 0.0 }).unwrap_or_else(|e| panic!("{e}"));
+    assert!((moved.offset[0] - centred.offset[0] - 30.0).abs() < 1e-3, "{:?} vs {:?}", moved.offset, centred.offset);
+    assert!((moved.offset[1] - centred.offset[1] + 20.0).abs() < 1e-3);
+    let (a, b) = (centred.toolpaths.bounds().unwrap_or_default(), moved.toolpaths.bounds().unwrap_or_default());
+    assert!((b.min[0] - a.min[0] - 30.0).abs() < 0.5 && (b.min[1] - a.min[1] + 20.0).abs() < 0.5, "{a:?} {b:?}");
+    let turned = slice(Placement { x: 0.0, y: 0.0, rotation_deg: 90.0 }).unwrap_or_else(|e| panic!("{e}"));
+    let c = turned.toolpaths.bounds().unwrap_or_default();
+    // The 20 by 10 footprint stands the other way, still about the bed's centre.
+    assert!(((c.max[0] - c.min[0]) - (a.max[1] - a.min[1])).abs() < 1.0, "{a:?} {c:?}");
+    assert!(((c.max[1] - c.min[1]) - (a.max[0] - a.min[0])).abs() < 1.0, "{a:?} {c:?}");
+    assert!((f32::midpoint(c.min[0], c.max[0]) - f32::midpoint(a.min[0], a.max[0])).abs() < 1.0);
+    assert!(slice(Placement { x: f32::NAN, y: 0.0, rotation_deg: 0.0 }).is_err());
 }

@@ -33,13 +33,32 @@ impl Slicer for SxSlicer {
             return Err(Error::Config(preflight::blocking_text(&issues)));
         }
         report.warnings.extend(issues.iter().map(|i| i.message.clone()));
-        let parts = job.parts.iter().map(part).collect::<Result<Vec<_>>>()?;
+        if !(job.placement.x.is_finite() && job.placement.y.is_finite() && job.placement.rotation_deg.is_finite()) {
+            return Err(Error::Part { name: String::new(), reason: "the placement is not finite".into() });
+        }
+        let mut parts = job.parts.iter().map(part).collect::<Result<Vec<_>>>()?;
         if parts.is_empty() {
             return Err(Error::Part { name: String::new(), reason: "nothing to print".into() });
         }
+        // A turn about Z, about the footprint's centre, before the bed centres the footprint.
+        if job.placement.rotation_deg != 0.0
+            && let Some(c) = crate::footprint_centre(job.parts)
+        {
+            let (sin, cos) = job.placement.rotation_deg.to_radians().sin_cos();
+            for p in parts.iter_mut().flat_map(|p| p.positions.iter_mut()) {
+                let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
+                p[0] = c[0] + dx * cos - dy * sin;
+                p[1] = c[1] + dx * sin + dy * cos;
+            }
+        }
         let mesh = Mesh { name: "solidcraft".into(), parts, ..Mesh::default() };
-        // The parts go to the middle of the profile's bed, as the desktop slicers do.
-        let plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
+        // The parts go to the middle of the profile's bed, as the desktop slicers do, and from
+        // there to where the placement asks.
+        let mut plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
+        for object in &mut plate.objects {
+            object.transform[12] += job.placement.x;
+            object.transform[13] += job.placement.y;
+        }
         let offset = plate.objects.first().map_or([0.0; 3], |o| [o.transform[12], o.transform[13], o.transform[14]]);
         let out = api::slice(&plate, &config, &SliceOptions::default()).map_err(|e| match e {
             api::Error::Blocked(why) | api::Error::Clearance(why) => Error::Unsafe(why),
@@ -151,6 +170,15 @@ fn feature(f: api::Feature) -> Option<Feature> {
 /// The settings, read one key at a time: a key whose value the engine cannot use keeps its default
 /// and is reported, as are the keys this engine never reads; only a file that is not a JSON object
 /// of keys refuses the job.
+/// The bed `[min_x, min_y, max_x, max_y]` and printable height the settings describe, without
+/// slicing anything: what a placement is measured against.
+pub fn bed_of(config: &str) -> Result<([f32; 4], f32)> {
+    let mut report = Report::default();
+    let config = read_config(config, &mut report)?;
+    let b = config.bed_rect();
+    Ok(([b[0] as f32, b[1] as f32, b[2] as f32, b[3] as f32], config.printable_height as f32))
+}
+
 fn read_config(text: &str, report: &mut Report) -> Result<PrintConfig> {
     if text.len() > MAX_CONFIG_BYTES {
         return Err(Error::Config(format!("{} bytes of settings is more than the {MAX_CONFIG_BYTES} a job may carry", text.len())));
