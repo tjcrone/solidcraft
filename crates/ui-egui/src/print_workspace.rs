@@ -1128,7 +1128,14 @@ fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
             if bytes > MAX_GEOMETRY_BYTES / 4 {
                 return;
             }
-            let corners = triangle.map(|i| body.mesh.positions.get(i as usize).map(|p| p.to_f32()));
+            // A hair inside the surface the beads lie on, so the shell never shares a depth
+            // with the outer wall (two surfaces at one depth flicker as the view moves).
+            let inset = |i: &u32| {
+                let p = body.mesh.positions.get(*i as usize)?.to_f32();
+                let n = body.mesh.normals.get(*i as usize).map_or([0.0; 3], |n| n.to_f32());
+                Some([p[0] - n[0] * SHELL_INSET, p[1] - n[1] * SHELL_INSET, p[2] - n[2] * SHELL_INSET])
+            };
+            let corners = triangle.map(|i| inset(&i));
             let [Some(a), Some(b), Some(d)] = corners else { continue };
             for p in [a, b, d] {
                 let (dx, dy) = (p[0] - about[0], p[1] - about[1]);
@@ -1142,6 +1149,9 @@ fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
 
 /// Opacity of the shell, 0 to 255.
 const SHELL_ALPHA: u8 = 24;
+/// How far inside the part's surface the shell is drawn, mm, so it never shares a depth with
+/// the outer wall's beads.
+const SHELL_INSET: f32 = 0.1;
 
 /// The design's bodies in a neutral grey, with the bed as a grid when one is known.
 /// The design's bodies where the placement puts them, turned about their footprint's centre and
