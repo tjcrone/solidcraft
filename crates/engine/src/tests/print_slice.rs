@@ -227,3 +227,28 @@ fn the_design_keeps_its_own_print_settings_over_the_files_and_under_the_call() {
     assert_eq!(back.print.overlay.len(), 2);
     std::fs::remove_file(&config).ok();
 }
+
+#[test]
+fn a_relative_path_is_refused_and_nothing_is_written() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10}));
+    let settings: Value = serde_json::from_str(KLIPPER_02).unwrap();
+    // The hostile-parameters test feeds strings like these; they used to land as G-code files in
+    // whatever folder the process ran in.
+    // Names no other run leaves behind, so an old stray file cannot pass for a new one.
+    let fresh = |name: &str| format!("sc-relative-{}-{name}", std::process::id());
+    for path in ["w = 20".to_string(), fresh("nope"), fresh("sub/dir.gcode"), format!("./{}", fresh("here.gcode"))] {
+        let e = s.execute("print.slice", &json!({"path": path, "settings": settings})).unwrap_err().to_string();
+        assert!(e.contains("absolute"), "{path}: {e}");
+        assert!(path.starts_with("w = ") || !std::path::Path::new(&path).exists(), "{path} was written");
+        assert!(s.print_slice().is_none(), "{path}: a refused slice is not held");
+    }
+    run(&mut s, "print.slice", json!({"settings": settings}));
+    let later = fresh("later.gcode");
+    let e = s.execute("print.save", &json!({"path": later})).unwrap_err().to_string();
+    assert!(e.contains("absolute"), "{e}");
+    assert!(!std::path::Path::new(&later).exists());
+    let ok = out("absolute.gcode");
+    assert_eq!(run(&mut s, "print.save", json!({"path": ok}))["path"], ok);
+    std::fs::remove_file(&ok).ok();
+}
