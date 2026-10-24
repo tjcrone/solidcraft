@@ -380,7 +380,7 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
     Section { tab: "PRINTER", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
     Section { tab: "PREPARE", panel: "PREPARE", promoted: 3, ids: &["print.settings.set", "print.place", "print.slice"] },
-    Section { tab: "SLICE", panel: "OUTPUT", promoted: 2, ids: &["print.save", "print.upload"] },
+    Section { tab: "PREVIEW", panel: "OUTPUT", promoted: 3, ids: &["print.slice", "print.save", "print.upload"] },
     Section { tab: "DEVICE", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
 ];
 
@@ -677,7 +677,7 @@ pub fn visible_tabs(app: &crate::SolveApp) -> Vec<&'static str> {
         return Vec::new();
     }
     if crate::print_workspace::active(app) {
-        return vec![crate::print_workspace::PREPARE, crate::print_workspace::SLICE, crate::print_workspace::DEVICE];
+        return vec![crate::print_workspace::PREPARE, crate::print_workspace::PREVIEW, crate::print_workspace::DEVICE];
     }
     let mut tabs: Vec<_> = TABS.iter().copied().filter(|tab| tab_turned_on(app, tab)).collect();
     if app.preferences.sketch_tab_always {

@@ -62,6 +62,16 @@ pub struct State {
     bed: Option<BedInfo>,
     /// A drag of the part across the bed in Prepare.
     drag: Option<Drag>,
+    /// Whether the held slice answers the panel's request, and what that was checked for.
+    current: Option<(SliceKey, bool)>,
+}
+
+/// What a slice request depends on: the files and when they changed, the design, the slice.
+#[derive(Clone, PartialEq, Eq)]
+struct SliceKey {
+    files: Vec<(String, Option<u64>)>,
+    revision: u64,
+    held: usize,
 }
 
 /// The bed `print.bed` reported, and what it was read for.
@@ -195,6 +205,7 @@ impl Default for State {
             uploaded: None,
             bed: None,
             drag: None,
+            current: None,
         }
     }
 }
@@ -202,11 +213,11 @@ impl Default for State {
 /// The Print workspace is showing: its Print tab or its Printer tab.
 /// The Print workspace's tabs: the model on the bed, the sliced preview, the printer.
 pub const PREPARE: &str = "PREPARE";
-pub const SLICE: &str = "SLICE";
+pub const PREVIEW: &str = "PREVIEW";
 pub const DEVICE: &str = "DEVICE";
 
 pub fn is_tab(tab: &str) -> bool {
-    matches!(tab, PREPARE | SLICE | DEVICE)
+    matches!(tab, PREPARE | PREVIEW | DEVICE)
 }
 
 pub fn active(app: &SolveApp) -> bool {
@@ -334,6 +345,45 @@ fn nudge_key(app: &mut SolveApp, key: egui::Key, mods: egui::Modifiers) -> bool 
     true
 }
 
+/// Whether the held slice already answers what Slice would ask for: then Slice is greyed. The
+/// engine is asked once per change of the files, their modification times, the design or the
+/// held slice.
+fn slice_current(app: &mut SolveApp) -> bool {
+    let files = app.print_workspace.settings.config_files.clone();
+    let stamps: Vec<(String, Option<u64>)> = files
+        .iter()
+        .map(|f| {
+            let modified =
+                std::fs::metadata(f).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+            (f.clone(), modified)
+        })
+        .collect();
+    let key = SliceKey { files: stamps, revision: app.session.revision, held: app.session.print_slice().map_or(0, |h| Arc::as_ptr(h) as usize) };
+    if let Some((k, v)) = &app.print_workspace.current
+        && *k == key
+    {
+        return *v;
+    }
+    let current =
+        app.session.print_slice().is_some() && app.run("print.slice", json!({"check": true, "config": files})).is_ok_and(|v| v["current"] == true);
+    app.print_workspace.current = Some((key, current));
+    current
+}
+
+/// The Slice button, greyed while the held slice is up to date.
+fn slice_button(app: &mut SolveApp, ui: &mut egui::Ui) {
+    let current = slice_current(app);
+    let button = crate::ui_kit::button(
+        ui,
+        app.tr("cmd.print.slice"),
+        if current { crate::ui_kit::Button::Enabled(false) } else { crate::ui_kit::Button::Primary },
+    );
+    let button = if current { button.on_disabled_hover_text(app.tr("print.slice_current")) } else { button };
+    if button.clicked() {
+        slice(app);
+    }
+}
+
 /// Run `print.place`, reporting a refusal on the status line.
 fn place(app: &mut SolveApp, params: serde_json::Value) {
     if let Err(e) = app.run("print.place", params) {
@@ -344,7 +394,7 @@ fn place(app: &mut SolveApp, params: serde_json::Value) {
 /// Where the part stands in printer coordinates: the slice's own offset on the Slice tab, else
 /// the placement laid over the bed the settings describe.
 fn placed_offset(app: &SolveApp) -> [f32; 3] {
-    if app.ui.tab == SLICE
+    if app.ui.tab == PREVIEW
         && let Some(held) = app.session.print_slice()
     {
         return held.sliced.offset;
@@ -414,7 +464,7 @@ pub fn reset_document(app: &mut SolveApp) {
 /// What the canvas shows, in printer coordinates: the toolpaths on the Slice tab, else the
 /// design where its placement puts it. Fit and the view's depth range frame this.
 pub fn bounds(app: &SolveApp) -> Option<Aabb3> {
-    if app.ui.tab == SLICE
+    if app.ui.tab == PREVIEW
         && let Some(held) = app.session.print_slice()
         && let Some(b) = held.sliced.toolpaths.bounds()
     {
@@ -518,6 +568,7 @@ pub fn slice(app: &mut SolveApp) {
             {
                 app.set_status(e, true);
             }
+            app.ui.tab = PREVIEW.into();
             sync_view(app);
             let layers = v["layers"].as_u64().unwrap_or(0);
             let time = v["time_s"].as_f64().unwrap_or(0.0);
@@ -654,22 +705,19 @@ fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
         place(app, json!({"centre": true}));
     }
     ui.separator();
-    if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Primary).clicked() {
-        slice(app);
-    }
+    slice_button(app, ui);
 }
 
-/// Slice: the result, the toolpath legend, and the way to the printer.
+/// Preview: the result, the toolpath legend, and the way to the printer.
 fn slice_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     ui.heading(app.tr("print.slice_title"));
+    slice_button(app, ui);
     match app.session.print_slice().cloned() {
         None => {
             wrapped_small(ui, app.tr("print.slice_from_prepare"));
-            if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Primary).clicked() {
-                slice(app);
-            }
         }
         Some(held) => {
+            ui.separator();
             result_rows(app, ui, &held);
             ui.separator();
             toolpath_controls(app, ui, &held);
@@ -871,7 +919,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         let eye = camera.eye();
         let ppp = ui.ctx().pixels_per_point();
         let clip = match (app.session.print_slice(), app.print_workspace.top_layer) {
-            (Some(held), Some(i)) if app.ui.tab == SLICE => held.sliced.toolpaths.layers.get(i).map_or([0.0; 4], |l| [0.0, 0.0, 1.0, l.z + 1e-3]),
+            (Some(held), Some(i)) if app.ui.tab == PREVIEW => held.sliced.toolpaths.layers.get(i).map_or([0.0; 4], |l| [0.0, 0.0, 1.0, l.z + 1e-3]),
             _ => [0.0; 4],
         };
         let slot = app.print_workspace.slot.clone();
@@ -908,7 +956,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     if let Err(error) = result {
         ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, error, egui::FontId::proportional(t.font_body), t.text_dim);
     }
-    if app.ui.tab == SLICE {
+    if app.ui.tab == PREVIEW {
         layer_slider(app, ui, rect);
     }
 }
@@ -1041,7 +1089,7 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
     let shift = drag_shift(app);
     let drag = [(shift[0] * 10.0).round() as i64, (shift[1] * 10.0).round() as i64];
     let source = match app.session.print_slice() {
-        Some(held) if app.ui.tab == SLICE => Source::Toolpaths { slice: Arc::as_ptr(held) as usize, travels: app.print_workspace.show_travels },
+        Some(held) if app.ui.tab == PREVIEW => Source::Toolpaths { slice: Arc::as_ptr(held) as usize, travels: app.print_workspace.show_travels },
         _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize, placement, bed, drag },
     };
     if app.print_workspace.uploaded == Some(source) {
