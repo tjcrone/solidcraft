@@ -378,9 +378,10 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
         ids: &["render.export", "render.result.regrade", "render.compare", "render.status", "render.backends"],
     },
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
-    Section { tab: "SLICE", panel: "SLICE", promoted: 3, ids: &["print.slice", "print.settings.set", "print.save"] },
-    Section { tab: "SLICE", panel: "PRINTER", promoted: 2, ids: &["print.upload", "print.cancel"] },
     Section { tab: "PRINTER", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
+    Section { tab: "PREPARE", panel: "PREPARE", promoted: 3, ids: &["print.settings.set", "print.place", "print.slice"] },
+    Section { tab: "SLICE", panel: "OUTPUT", promoted: 2, ids: &["print.save", "print.upload"] },
+    Section { tab: "DEVICE", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
 ];
 
 /// Compact source labels for painted big buttons only. Menus, search and tooltips
@@ -439,6 +440,9 @@ pub const RIBBON_LABELS: &[(&str, &str)] = &[
     ("plastic.assign_rule", "Assign Rule"),
     ("plastic.manage_rules", "Plastic Rules"),
     ("pointcloud.insert", "Point Clouds"),
+    ("print.place", "Centre"),
+    ("print.settings.set", "Settings"),
+    ("print.upload", "Upload"),
     ("render.scene", "Scene"),
     ("sheet.export_bend_table", "Bend Table"),
     ("sheet.export_dxf", "Export DXF"),
@@ -673,7 +677,7 @@ pub fn visible_tabs(app: &crate::SolveApp) -> Vec<&'static str> {
         return Vec::new();
     }
     if crate::print_workspace::active(app) {
-        return vec!["SLICE", "PRINTER"];
+        return vec![crate::print_workspace::PREPARE, crate::print_workspace::SLICE, crate::print_workspace::DEVICE];
     }
     let mut tabs: Vec<_> = TABS.iter().copied().filter(|tab| tab_turned_on(app, tab)).collect();
     if app.preferences.sketch_tab_always {
