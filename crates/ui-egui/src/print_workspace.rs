@@ -39,8 +39,12 @@ pub type MakePrinterHost = Arc<dyn Fn(&str) -> Result<Arc<dyn PrinterHost>, Stri
 pub struct State {
     pub settings: Settings,
     settings_loaded: bool,
-    /// The placement offset the camera target currently carries (`sync_view`).
+    /// The offset the camera target currently carries (`sync_view`).
     view_offset: [f32; 3],
+    /// The offset the view took on entering the workspace, so the Design view and this one
+    /// show the part in the same place at that moment; it stays until the workspace is left,
+    /// so moving the part never moves the camera.
+    anchor: Option<[f32; 3]>,
     /// The highest layer shown, as an index; `None` shows every layer.
     pub top_layer: Option<usize>,
     pub show_travels: bool,
@@ -169,6 +173,8 @@ enum Source {
         world: usize,
         placement: [i64; 3],
         bed: [i32; 4],
+        /// A drag in progress, tenths of a millimetre.
+        drag: [i64; 2],
     },
 }
 
@@ -178,6 +184,7 @@ impl Default for State {
             settings: Settings::default(),
             settings_loaded: false,
             view_offset: [0.0; 3],
+            anchor: None,
             top_layer: None,
             show_travels: false,
             printer_tried: None,
@@ -248,7 +255,11 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
         app.ui.tab = "MODEL".into();
     }
     app.cancel_view_animation();
-    sync_view(app);
+    // The anchor is taken on the first frame drawn, once the bed is known; leaving takes it off.
+    app.print_workspace.anchor = None;
+    if !on {
+        sync_view(app);
+    }
     crate::printer_dashboard::sync_camera(app);
     Ok(())
 }
@@ -257,7 +268,19 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
 /// none. The camera target follows any change, so the part stays where it was on screen when
 /// the workspace changes or a new slice lands elsewhere on the bed.
 pub fn sync_view(app: &mut SolveApp) {
-    let wanted = if active(app) { placed_offset(app) } else { [0.0; 3] };
+    let wanted = if active(app) {
+        match app.print_workspace.anchor {
+            Some(a) => a,
+            None => {
+                let a = placed_offset(app);
+                app.print_workspace.anchor = Some(a);
+                a
+            }
+        }
+    } else {
+        app.print_workspace.anchor = None;
+        [0.0; 3]
+    };
     let applied = app.print_workspace.view_offset;
     if wanted != applied {
         let d = view_shift(applied, wanted);
@@ -378,6 +401,7 @@ pub fn switch(app: &mut SolveApp, workspace: &str) -> Result<(), String> {
 /// Another design opened: the view starts over, the settings files stay.
 pub fn reset_document(app: &mut SolveApp) {
     app.print_workspace.view_offset = [0.0; 3];
+    app.print_workspace.anchor = None;
     let settings = std::mem::take(&mut app.print_workspace.settings);
     let settings_loaded = app.print_workspace.settings_loaded;
     app.print_workspace = State { settings, settings_loaded, ..Default::default() };
@@ -887,9 +911,11 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     if app.ui.tab == SLICE {
         layer_slider(app, ui, rect);
     }
-    if let Some(drag) = app.print_workspace.drag {
-        footprint_ghost(app, ui, rect, drag);
-    }
+}
+
+/// How far a drag in progress has carried the part, in printer millimetres.
+fn drag_shift(app: &SolveApp) -> [f64; 2] {
+    app.print_workspace.drag.map_or([0.0; 2], |d| [d.to[0] - d.from[0], d.to[1] - d.from[1]])
 }
 
 /// A drag that starts on the part moves it across the bed; the placement is set when the drag
@@ -935,13 +961,13 @@ fn bed_hit(proj: &crate::viewport::Proj, pos: egui::Pos2) -> Option<[f64; 2]> {
 }
 
 /// The eight corners of the part's bounds where it stands, in printer coordinates.
-fn placed_corners(app: &SolveApp, shift: [f64; 2]) -> Option<[Vec3; 8]> {
+fn placed_corners(app: &SolveApp) -> Option<[Vec3; 8]> {
     let b = solidcraft_engine::product_scene::extract(&app.session).ok()?.bounds;
     if b.is_empty() {
         return None;
     }
     let o = prepare_offset(app)?;
-    let (ox, oy, oz) = (f64::from(o[0]) + shift[0], f64::from(o[1]) + shift[1], f64::from(o[2]));
+    let (ox, oy, oz) = (f64::from(o[0]), f64::from(o[1]), f64::from(o[2]));
     let mut out = [Vec3::ZERO; 8];
     for (i, c) in out.iter_mut().enumerate() {
         let x = if i & 1 == 0 { b.min.x } else { b.max.x };
@@ -954,7 +980,7 @@ fn placed_corners(app: &SolveApp, shift: [f64; 2]) -> Option<[Vec3; 8]> {
 
 /// Whether a screen point lies over the part's bounds, as they project.
 fn over_part(app: &SolveApp, proj: &crate::viewport::Proj, pos: egui::Pos2) -> bool {
-    let Some(corners) = placed_corners(app, [0.0; 2]) else { return false };
+    let Some(corners) = placed_corners(app) else { return false };
     let mut rect = egui::Rect::NOTHING;
     for c in corners {
         if let Some(p) = proj.to_screen(c) {
@@ -962,18 +988,6 @@ fn over_part(app: &SolveApp, proj: &crate::viewport::Proj, pos: egui::Pos2) -> b
         }
     }
     rect.is_positive() && rect.contains(pos)
-}
-
-/// The outline of the part's footprint where the drag would put it.
-fn footprint_ghost(app: &SolveApp, ui: &egui::Ui, rect: egui::Rect, drag: Drag) {
-    let proj = crate::viewport::projection(app, rect);
-    let shift = [drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]];
-    let Some(corners) = placed_corners(app, shift) else { return };
-    let t = Tokens::get();
-    let bottom: Vec<egui::Pos2> = [0, 1, 3, 2].iter().filter_map(|&i| proj.to_screen(corners[i])).collect();
-    if bottom.len() == 4 {
-        ui.painter().add(egui::Shape::closed_line(bottom, egui::Stroke::new(2.0, t.accent)));
-    }
 }
 
 /// The highest layer shown, 1-based, for a slice of `n` layers.
@@ -1024,9 +1038,11 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
     let p = app.session.doc.print.placement;
     let placement = [(p.x * 1000.0).round() as i64, (p.y * 1000.0).round() as i64, (p.rotation * 1000.0).round() as i64];
     let bed = app.print_workspace.bed.as_ref().map_or([0; 4], |b| b.rect.map(|v| (v * 10.0).round() as i32));
+    let shift = drag_shift(app);
+    let drag = [(shift[0] * 10.0).round() as i64, (shift[1] * 10.0).round() as i64];
     let source = match app.session.print_slice() {
         Some(held) if app.ui.tab == SLICE => Source::Toolpaths { slice: Arc::as_ptr(held) as usize, travels: app.print_workspace.show_travels },
-        _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize, placement, bed },
+        _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize, placement, bed, drag },
     };
     if app.print_workspace.uploaded == Some(source) {
         return Ok(());
@@ -1086,7 +1102,11 @@ fn prepared_scene(app: &SolveApp) -> Result<GpuScene, String> {
     let scene = solidcraft_engine::product_scene::extract(&app.session).map_err(|e| e.to_string())?;
     let mut gpu = GpuScene::default();
     let grey = [0xb4, 0xba, 0xc4, 255];
-    let offset = prepare_offset(app).unwrap_or([0.0; 3]);
+    let mut offset = prepare_offset(app).unwrap_or([0.0; 3]);
+    // While the part is dragged it moves with the pointer; the placement follows at the end.
+    let shift = drag_shift(app);
+    offset[0] += shift[0] as f32;
+    offset[1] += shift[1] as f32;
     let c = scene.bounds.center().to_f32();
     let (sin, cos) = (app.session.doc.print.placement.rotation as f32).to_radians().sin_cos();
     let turn = |v: [f32; 3], about: [f32; 2]| {

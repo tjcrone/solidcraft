@@ -113,6 +113,9 @@ pub trait PrinterHost: Send + Sync {
     fn job(&self, id: u64) -> Option<JobState>;
     /// The latest status, without waiting on the network.
     fn status(&self) -> PrinterStatus;
+    /// Ask the printer again now for its status and its cameras (a camera plugged in later, a
+    /// printer switched on after the app), without waiting for the next poll.
+    fn refresh(&self) {}
 }
 
 impl crate::Session {

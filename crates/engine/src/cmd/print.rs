@@ -29,6 +29,7 @@ const SETTINGS_SET: &str = "print.settings.set";
 const SETTINGS_CLEAR: &str = "print.settings.clear";
 const PLACE: &str = "print.place";
 const BED: &str = "print.bed";
+const REFRESH: &str = "print.refresh";
 /// Most degrees a nozzle or bed may be asked for.
 const MAX_NOZZLE_C: f64 = 350.0;
 const MAX_BED_C: f64 = 150.0;
@@ -73,7 +74,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(SETTINGS_GET, "Read Print Settings", settings_get).noundo().doc_only().icon("settings").params(
         "config?: path, or [paths], of the settings files; keys?: [names] (default: the design's overrides and every key of the files) → settings: {key: {value, source: design | file | default, file?}}, overlay: {key: value} (the design's own overrides)",
     ),
-    CommandSpec::new(SETTINGS_SET, "Print Settings", settings_set).doc_only().at("PREPARE", "PREPARE").icon("settings").params(
+    CommandSpec::new(SETTINGS_SET, "3D Print Settings", settings_set).doc_only().at("PREPARE", "PREPARE").icon("settings").params(
         "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
     ),
     CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
@@ -83,7 +84,15 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(BED, "Print Bed", bed).noundo().doc_only().icon("inspect").params(
         "config?: path, or [paths], of the settings files → bed: [min_x, min_y, max_x, max_y], printable_height, placement: {x, y, rotation}. What the settings describe, without slicing",
     ),
+    CommandSpec::new(REFRESH, "Refresh Printer", refresh).noundo().doc_only().icon("inspect").params(
+        "No parameters. Asks the installed printer host for its status and cameras now, without waiting for its next poll; print.status and print.webcams show what came back",
+    ),
 ];
+
+fn refresh(s: &mut Session, _p: &Value) -> Result<Value> {
+    host(s, REFRESH)?.refresh();
+    Ok(json!({}))
+}
 
 fn place(s: &mut Session, p: &Value) -> Result<Value> {
     let number = |key: &str| -> Result<Option<f64>> {
