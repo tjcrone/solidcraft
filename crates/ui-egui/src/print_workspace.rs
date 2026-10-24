@@ -944,7 +944,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             analysis_colors: [0.0; 36],
             access: None,
             outline: false,
-            ao_radius: 0.0,
+            ao_radius: if app.preferences.ambient_occlusion { (bounds.diagonal() * 0.04).clamp(1e-4, 1e6) as f32 } else { 0.0 },
             eye: [eye.x as f32, eye.y as f32, eye.z as f32, if camera.fov > 0.0 { 1.0 } else { 0.0 }],
             ssaa: 1.0,
             hover_tint: [0.0; 3],
@@ -1240,19 +1240,18 @@ fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<GpuScene, String> {
 
 /// How far above a layer's top its travel moves are drawn, mm.
 const TRAVEL_LIFT: f32 = 0.05;
-/// The flat top (and bottom) of a bead as a share of its full width.
-const TOP_SHARE: f32 = 0.55;
-/// Vertices per straight segment at each detail: top quad, upper slopes, lower slopes.
-const BEAD_VERTS: usize = 6 * 5;
-const HALF_VERTS: usize = 6 * 3;
+/// Vertices per straight segment at each detail: the ring's faces, two triangles each.
+const BEAD_VERTS: usize = 6 * 10;
+const HALF_VERTS: usize = 6 * 5;
 const FLAT_VERTS: usize = 6;
-/// Vertices one join step adds: a top wedge and the slope quads around it.
-const JOIN_VERTS: usize = 3 + 6 * 2;
-const HALF_JOIN_VERTS: usize = 3 + 6;
+/// Vertices one join step adds: the ring's faces on the outside of the turn, and a wedge on
+/// the top (and the bottom) to the bead's centre line.
+const JOIN_VERTS: usize = 6 * 4 + 3 * 2;
+const HALF_JOIN_VERTS: usize = 6 * 2 + 3;
 const FLAT_JOIN_VERTS: usize = 3;
-/// Vertices an end cap adds: a quad per slope ring.
-const CAP_VERTS: usize = 6 * 2;
-const HALF_CAP_VERTS: usize = 6;
+/// Vertices an end cap adds: a fan over the ring.
+const CAP_VERTS: usize = 3 * 8;
+const HALF_CAP_VERTS: usize = 3 * 4;
 /// Widest turn one join step spans; sharper corners get more steps so the fan stays round.
 const JOIN_STEP: f32 = std::f32::consts::FRAC_PI_4;
 
@@ -1267,35 +1266,100 @@ enum Detail {
     Lines,
 }
 
-/// The bead's cross-section at one point: `n` is the unit side normal, `half` the half width.
+/// The bead's cross-section: a ring of points in (sideways, height) about the path, going
+/// round counter-clockwise seen along the path (up the right side, across the top, down the
+/// left side, across the bottom). The full ring is a stadium, flat on top and underneath with
+/// half-round sides, the shape a laid bead takes: `half` to each side, the layer tall. The
+/// lesser details keep the top and the upper arcs, then the top alone.
 struct Profile {
+    ring: Vec<[f32; 2]>,
+    closed: bool,
+    /// The ring's indices on the right (+1) side and the left (-1) side, each a run along the
+    /// ring, so the faces between neighbours are the ring's own.
+    right: std::ops::Range<usize>,
+    left: std::ops::Range<usize>,
     top: f32,
-    mid: f32,
     bottom: f32,
-    half: f32,
 }
 
 impl Profile {
-    fn top_pt(&self, p: [f32; 2], n: [f32; 2], side: f32) -> [f32; 3] {
-        let r = self.half * TOP_SHARE * side;
-        [p[0] + n[0] * r, p[1] + n[1] * r, self.top]
+    fn new(top: f32, bottom: f32, half: f32, detail: Detail) -> Self {
+        let mid = f32::midpoint(top, bottom);
+        let b = ((top - bottom) * 0.5).max(1e-4);
+        let a = half.min(b);
+        let flat = (half - a).max(0.0);
+        // A point of the arc on one side, `t` degrees up from the bead's widest line.
+        let arc = |t: f32, side: f32| -> [f32; 2] {
+            let (sin, cos) = t.to_radians().sin_cos();
+            [side * (flat + a * cos), mid + b * sin]
+        };
+        match detail {
+            Detail::Beads => Self {
+                ring: vec![
+                    arc(-90.0, 1.0),
+                    arc(-45.0, 1.0),
+                    arc(0.0, 1.0),
+                    arc(45.0, 1.0),
+                    arc(90.0, 1.0),
+                    arc(90.0, -1.0),
+                    arc(45.0, -1.0),
+                    arc(0.0, -1.0),
+                    arc(-45.0, -1.0),
+                    arc(-90.0, -1.0),
+                ],
+                closed: true,
+                right: 0..5,
+                left: 5..10,
+                top,
+                bottom,
+            },
+            Detail::Half => Self {
+                ring: vec![arc(0.0, 1.0), arc(45.0, 1.0), arc(90.0, 1.0), arc(90.0, -1.0), arc(45.0, -1.0), arc(0.0, -1.0)],
+                closed: false,
+                right: 0..3,
+                left: 3..6,
+                top,
+                bottom,
+            },
+            Detail::Flat | Detail::Lines => Self { ring: vec![[half, top], [-half, top]], closed: false, right: 0..1, left: 1..2, top, bottom },
+        }
     }
-    fn mid_pt(&self, p: [f32; 2], n: [f32; 2], side: f32) -> [f32; 3] {
-        let r = self.half * side;
-        [p[0] + n[0] * r, p[1] + n[1] * r, self.mid]
+
+    /// How many faces a straight segment has.
+    fn edges(&self) -> usize {
+        if self.closed { self.ring.len() } else { self.ring.len().saturating_sub(1) }
     }
-    fn bottom_pt(&self, p: [f32; 2], n: [f32; 2], side: f32) -> [f32; 3] {
-        let r = self.half * TOP_SHARE * side;
-        [p[0] + n[0] * r, p[1] + n[1] * r, self.bottom]
+
+    /// Ring point `k` at `p`, where `n` is the unit vector to the right of the path.
+    fn at(&self, p: [f32; 2], n: [f32; 2], k: usize) -> [f32; 3] {
+        let [r, z] = self.ring[k % self.ring.len()];
+        [p[0] + n[0] * r, p[1] + n[1] * r, z]
     }
-    /// Outward normal of the upper slope on `side`.
-    fn upper_normal(&self, n: [f32; 2], side: f32) -> [f32; 3] {
-        unit([n[0] * side * (self.top - self.mid), n[1] * side * (self.top - self.mid), self.half * (1.0 - TOP_SHARE)])
+
+    /// The outward normal of the face between ring points `k` and `k + 1`.
+    fn face_normal(&self, n: [f32; 2], k: usize) -> [f32; 3] {
+        let a = self.ring[k % self.ring.len()];
+        let b = self.ring[(k + 1) % self.ring.len()];
+        let (dr, dz) = (b[0] - a[0], b[1] - a[1]);
+        unit([n[0] * dz, n[1] * dz, -dr])
     }
-    /// Outward normal of the lower slope on `side`.
-    fn lower_normal(&self, n: [f32; 2], side: f32) -> [f32; 3] {
-        unit([n[0] * side * (self.mid - self.bottom), n[1] * side * (self.mid - self.bottom), -self.half * (1.0 - TOP_SHARE)])
+
+    /// The ring's run on one side of the path.
+    fn side(&self, side: f32) -> std::ops::Range<usize> {
+        if side > 0.0 { self.right.clone() } else { self.left.clone() }
     }
+
+    /// The highest and the lowest point of a run.
+    fn extremes(&self, run: std::ops::Range<usize>) -> (usize, usize) {
+        let highest = run.clone().max_by(|&i, &j| self.ring[i][1].total_cmp(&self.ring[j][1])).unwrap_or(0);
+        let lowest = run.min_by(|&i, &j| self.ring[i][1].total_cmp(&self.ring[j][1])).unwrap_or(0);
+        (highest, lowest)
+    }
+}
+
+fn unit2(v: [f32; 2]) -> [f32; 2] {
+    let l = v[0].hypot(v[1]);
+    if l > 1e-12 { [v[0] / l, v[1] / l] } else { [1.0, 0.0] }
 }
 
 fn unit(v: [f32; 3]) -> [f32; 3] {
@@ -1313,11 +1377,10 @@ fn direction(a: [f32; 2], b: [f32; 2]) -> Option<([f32; 2], [f32; 2])> {
 fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
     let top = layer.z;
     let bottom = (layer.z - layer.height).max(0.0);
-    let mid = (top + bottom) * 0.5;
     for path in &layer.paths {
         let c = feature_color(path.feature);
         let half = (path.width_mm * 0.5).max(0.05);
-        let prof = Profile { top, mid, bottom, half };
+        let prof = Profile::new(top, bottom, half, detail);
         let pts = &path.points;
         if detail == Detail::Lines {
             for w in pts.windows(2) {
@@ -1332,10 +1395,10 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
         for w in pts.windows(2) {
             let (a, b) = (w[0], w[1]);
             let Some((d, n)) = direction(a, b) else { continue };
-            bead_segment(gpu, &prof, a, b, n, detail, c);
+            bead_segment(gpu, &prof, a, b, n, c);
             match previous {
-                Some(d0) => bead_join(gpu, &prof, a, d0, d, detail, c),
-                None if !closed => bead_cap(gpu, &prof, a, d, n, -1.0, detail, c),
+                Some(d0) => bead_join(gpu, &prof, a, d0, d, c),
+                None if !closed => bead_cap(gpu, &prof, a, d, n, -1.0, c),
                 None => {}
             }
             previous = Some(d);
@@ -1344,10 +1407,10 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
         if closed {
             // The loop's seam: the join between its last and first steps.
             if let Some(((d_first, _), last)) = pts.windows(2).find_map(|w| direction(w[0], w[1])).zip(pts.last()) {
-                bead_join(gpu, &prof, *last, d_last, d_first, detail, c);
+                bead_join(gpu, &prof, *last, d_last, d_first, c);
             }
         } else if let Some(last) = pts.last() {
-            bead_cap(gpu, &prof, *last, d_last, [-d_last[1], d_last[0]], 1.0, detail, c);
+            bead_cap(gpu, &prof, *last, d_last, [-d_last[1], d_last[0]], 1.0, c);
         }
     }
 }
@@ -1366,38 +1429,22 @@ fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead
             gpu.line([a[0], a[1], top], [b[0], b[1], top], c, 1.5, false);
             continue;
         }
-        let prof = Profile { top, mid: (top + bottom) * 0.5, bottom, half };
-        bead_segment(gpu, &prof, a, b, n, detail, c);
+        let prof = Profile::new(top, bottom, half, detail);
+        bead_segment(gpu, &prof, a, b, n, c);
     }
 }
 
 /// One straight piece of bead from `a` to `b` with left normal `n`.
-fn bead_segment(gpu: &mut GpuScene, prof: &Profile, a: [f32; 2], b: [f32; 2], n: [f32; 2], detail: Detail, c: [u8; 4]) {
-    let up = [0.0, 0.0, 1.0];
-    quad(gpu, prof.top_pt(a, n, 1.0), prof.top_pt(b, n, 1.0), prof.top_pt(b, n, -1.0), prof.top_pt(a, n, -1.0), up, c);
-    if detail == Detail::Flat {
-        return;
-    }
-    for side in [1.0, -1.0] {
-        let (p0, p1, p2, p3) = (prof.top_pt(a, n, side), prof.top_pt(b, n, side), prof.mid_pt(b, n, side), prof.mid_pt(a, n, side));
-        if side > 0.0 {
-            quad(gpu, p3, p2, p1, p0, prof.upper_normal(n, side), c);
-        } else {
-            quad(gpu, p0, p1, p2, p3, prof.upper_normal(n, side), c);
-        }
-        if detail == Detail::Beads {
-            let (p0, p1, p2, p3) = (prof.mid_pt(a, n, side), prof.mid_pt(b, n, side), prof.bottom_pt(b, n, side), prof.bottom_pt(a, n, side));
-            if side > 0.0 {
-                quad(gpu, p3, p2, p1, p0, prof.lower_normal(n, side), c);
-            } else {
-                quad(gpu, p0, p1, p2, p3, prof.lower_normal(n, side), c);
-            }
-        }
+/// A straight run of bead from `a` to `b`: one face per ring edge.
+fn bead_segment(gpu: &mut GpuScene, prof: &Profile, a: [f32; 2], b: [f32; 2], n: [f32; 2], c: [u8; 4]) {
+    for k in 0..prof.edges() {
+        quad(gpu, prof.at(a, n, k), prof.at(b, n, k), prof.at(b, n, k + 1), prof.at(a, n, k + 1), prof.face_normal(n, k), c);
     }
 }
 
-/// The fan on the outside of the corner at `v`, where the bead turns from direction `d0` to `d1`.
-fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], detail: Detail, c: [u8; 4]) {
+/// The outside of a corner at `v`, between a step going `d0` and one going `d1`: the ring's
+/// faces on that side swept round the corner, with wedges on the top and the bottom.
+fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], c: [u8; 4]) {
     let cross = d0[0] * d1[1] - d0[1] * d1[0];
     let dot = (d0[0] * d1[0] + d0[1] * d1[1]).clamp(-1.0, 1.0);
     let angle = dot.acos();
@@ -1414,60 +1461,36 @@ fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: 
         let (s, co) = (sweep * t).sin_cos();
         [n0[0] * co - n0[1] * s, n0[0] * s + n0[1] * co]
     };
-    let up = [0.0, 0.0, 1.0];
-    let center_top = [v[0], v[1], prof.top];
+    let run = prof.side(side);
+    let (highest, lowest) = prof.extremes(run.clone());
+    let centre_top = [v[0], v[1], prof.top];
+    let centre_bottom = [v[0], v[1], prof.bottom];
     for i in 0..steps {
         let (na, nb) = (normal_at(i as f32 / steps as f32), normal_at((i + 1) as f32 / steps as f32));
-        let (ta, tb) = (prof.top_pt(v, na, side), prof.top_pt(v, nb, side));
-        let (t0, t1) = if side > 0.0 { (ta, tb) } else { (tb, ta) };
-        tri(gpu, center_top, t0, t1, up, c);
-        if detail == Detail::Flat {
-            continue;
+        let nm = unit2([(na[0] + nb[0]) * 0.5, (na[1] + nb[1]) * 0.5]);
+        for k in run.start..run.end.saturating_sub(1) {
+            quad(gpu, prof.at(v, na, k), prof.at(v, nb, k), prof.at(v, nb, k + 1), prof.at(v, na, k + 1), prof.face_normal(nm, k), c);
         }
-        let (ma, mb) = (prof.mid_pt(v, na, side), prof.mid_pt(v, nb, side));
-        let nm = [(na[0] + nb[0]) * 0.5, (na[1] + nb[1]) * 0.5];
-        if side > 0.0 {
-            quad(gpu, ma, mb, tb, ta, prof.upper_normal(nm, side), c);
-        } else {
-            quad(gpu, ta, tb, mb, ma, prof.upper_normal(nm, side), c);
-        }
-        if detail == Detail::Beads {
-            let (ba, bb) = (prof.bottom_pt(v, na, side), prof.bottom_pt(v, nb, side));
-            if side > 0.0 {
-                quad(gpu, ba, bb, mb, ma, prof.lower_normal(nm, side), c);
-            } else {
-                quad(gpu, ma, mb, bb, ba, prof.lower_normal(nm, side), c);
-            }
+        tri(gpu, centre_top, prof.at(v, na, highest), prof.at(v, nb, highest), [0.0, 0.0, 1.0], c);
+        if prof.closed {
+            tri(gpu, centre_bottom, prof.at(v, na, lowest), prof.at(v, nb, lowest), [0.0, 0.0, -1.0], c);
         }
     }
 }
 
-/// Fan steps for a turn of `angle`: one per `JOIN_STEP`, a hair of slack so a right angle is
-/// exactly two.
 fn join_steps(angle: f32) -> usize {
     ((angle / JOIN_STEP - 1e-4).ceil() as usize).clamp(1, 8)
 }
 
-/// The closed end of an open path at `p`: `d` the bead's direction there, `n` its left normal,
-/// `facing` -1 at the start (the cap faces backwards) and 1 at the end.
-fn bead_cap(gpu: &mut GpuScene, prof: &Profile, p: [f32; 2], d: [f32; 2], n: [f32; 2], facing: f32, detail: Detail, c: [u8; 4]) {
-    if detail == Detail::Flat {
+/// The end of an open bead at `p`: a fan over the ring, facing `facing` times the path's
+/// direction `d`.
+fn bead_cap(gpu: &mut GpuScene, prof: &Profile, p: [f32; 2], d: [f32; 2], n: [f32; 2], facing: f32, c: [u8; 4]) {
+    if prof.ring.len() < 3 {
         return;
     }
     let normal = [d[0] * facing, d[1] * facing, 0.0];
-    let (tl, tr, ml, mr) = (prof.top_pt(p, n, 1.0), prof.top_pt(p, n, -1.0), prof.mid_pt(p, n, 1.0), prof.mid_pt(p, n, -1.0));
-    if facing > 0.0 {
-        quad(gpu, tl, tr, mr, ml, normal, c);
-    } else {
-        quad(gpu, tr, tl, ml, mr, normal, c);
-    }
-    if detail == Detail::Beads {
-        let (bl, br) = (prof.bottom_pt(p, n, 1.0), prof.bottom_pt(p, n, -1.0));
-        if facing > 0.0 {
-            quad(gpu, ml, mr, br, bl, normal, c);
-        } else {
-            quad(gpu, mr, ml, bl, br, normal, c);
-        }
+    for k in 1..prof.ring.len() - 1 {
+        tri(gpu, prof.at(p, n, 0), prof.at(p, n, k), prof.at(p, n, k + 1), normal, c);
     }
 }
 
