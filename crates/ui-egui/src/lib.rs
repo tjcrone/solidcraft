@@ -1643,7 +1643,7 @@ impl SolveApp {
             print_settings_window::open(self);
             return;
         }
-        if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel") {
+        if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel" | "print.place") {
             print_workspace::start(self, id);
             return;
         }
