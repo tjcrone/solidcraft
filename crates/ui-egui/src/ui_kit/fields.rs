@@ -754,6 +754,11 @@ impl Default for Slider {
     }
 }
 
+/// The one native slider the kit builds on; `slider` and `vertical_slider` dress it.
+fn native_slider<'a, T: egui::emath::Numeric>(value: &'a mut T, range: std::ops::RangeInclusive<T>) -> egui::Slider<'a> {
+    egui::Slider::new(value, range).handle_shape(egui::style::HandleShape::Circle)
+}
+
 /// The only slider element, including stepped preferences and editor-free timeline controls.
 /// Native input, keyboard routing, enabled state and accessibility; one token-painted track/thumb.
 /// Tokens: control_height, space_24/8/4/2, dialog_body/rule, control_fill, form_primary.
@@ -781,7 +786,7 @@ pub(crate) fn slider<T: egui::emath::Numeric>(ui: &mut Ui, value: &mut T, range:
             t.space_4
         };
         ui.spacing_mut().slider_width = dimension(ui.available_width() - reserved);
-        let mut widget = egui::Slider::new(value, range).show_value(options.show_value).handle_shape(egui::style::HandleShape::Circle);
+        let mut widget = native_slider(value, range).show_value(options.show_value);
         if options.show_value {
             widget = widget.custom_formatter(move |v, _| (options.format)(v));
         }
@@ -845,6 +850,53 @@ pub(crate) fn mixed_slider(ui: &mut Ui, value: &mut f64, range: std::ops::RangeI
         field.union(track)
     })
     .inner
+}
+
+/// A vertical slider standing on a canvas (the Print preview's layer slider): egui's native
+/// input, keyboard and accessibility, with the kit painting the track and thumb from tokens. The
+/// minimum is at the bottom. `track` is where it stands; nothing is drawn behind it, so the
+/// canvas shows through. Tokens: text_dim, accent, panel, space_4/8/2.
+pub(crate) fn vertical_slider<T: egui::emath::Numeric>(
+    ui: &mut Ui,
+    track: egui::Rect,
+    value: &mut T,
+    range: std::ops::RangeInclusive<T>,
+) -> Response {
+    let t = Tokens::get();
+    let limits = (range.start().to_f64(), range.end().to_f64());
+    let response = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(track), |ui| {
+            ui.spacing_mut().slider_width = dimension(track.height());
+            ui.spacing_mut().interact_size.y = dimension(track.width());
+            // egui's own rail and handle stay out of sight; the kit paints both below.
+            let hide = |v: &mut egui::style::WidgetVisuals| {
+                v.bg_fill = egui::Color32::TRANSPARENT;
+                v.weak_bg_fill = egui::Color32::TRANSPARENT;
+                v.bg_stroke = egui::Stroke::NONE;
+                v.fg_stroke = egui::Stroke::NONE;
+            };
+            let visuals = ui.visuals_mut();
+            visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
+            for v in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered, &mut visuals.widgets.active, &mut visuals.widgets.noninteractive] {
+                hide(v);
+            }
+            ui.put(track, native_slider(value, range).vertical().show_value(false))
+        })
+        .inner;
+    let fraction = if limits.1 != limits.0 { ((value.to_f64() - limits.0) / (limits.1 - limits.0)).clamp(0.0, 1.0) as f32 } else { 0.0 };
+    // egui keeps the handle's centre a handle radius inside each end of the rect.
+    let input_radius = ui.text_style_height(&egui::TextStyle::Body).max(ui.spacing().interact_size.y) / 2.5;
+    let (top, bottom) = (track.top() + input_radius, track.bottom() - input_radius);
+    let x = track.center().x;
+    let y = egui::lerp(bottom..=top, fraction);
+    let painter = ui.painter();
+    painter.line_segment([egui::pos2(x, top), egui::pos2(x, bottom)], egui::Stroke::new(t.space_4, t.text_dim));
+    painter.line_segment([egui::pos2(x, y), egui::pos2(x, bottom)], egui::Stroke::new(t.space_4, t.accent));
+    let r = if response.hovered() || response.dragged() { t.space_8 + t.space_2 } else { t.space_8 };
+    painter.circle(egui::pos2(x, y), r, t.accent, egui::Stroke::new(t.space_2, t.panel));
+    publish(ui, &response, egui::WidgetType::Slider);
+    response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), value.to_f64(), crate::i18n::tr_label(label(ui))));
+    response
 }
 
 /// Locale-aware bounded scalar field, used for dimensionless material properties.
