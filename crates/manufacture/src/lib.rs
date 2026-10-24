@@ -13,7 +13,7 @@ pub mod reach;
 mod sx;
 pub mod toolpaths;
 
-pub use sx::SxSlicer;
+pub use sx::{SxSlicer, bed_of};
 pub use toolpaths::{Feature, FileBead, Layer, Path, Toolpaths};
 
 /// Most triangles one job may carry: a design that tessellates past this is refused, not sliced.
@@ -66,13 +66,36 @@ impl Part {
     }
 }
 
-/// What one slice runs on: the parts that print, in the same space, and the settings as a JSON
-/// object of OrcaSlicer keys.
+/// Where the parts go on the bed: millimetres from the bed's centre (the parts' footprint is
+/// centred there by default) and a turn about Z in degrees, about the footprint's centre.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Placement {
+    pub x: f32,
+    pub y: f32,
+    pub rotation_deg: f32,
+}
+
+/// What one slice runs on: the parts that print, in the same space, the settings as a JSON
+/// object of OrcaSlicer keys, and where the parts go on the bed.
 #[derive(Clone, Debug)]
 pub struct Job<'a> {
     pub parts: &'a [Part],
     /// A JSON object text, `{}` for the engine's defaults.
     pub config: &'a str,
+    pub placement: Placement,
+}
+
+/// The parts' footprint on the bed before placement: the centre of their XY bounds.
+pub fn footprint_centre(parts: &[Part]) -> Option<[f32; 2]> {
+    let mut lo = [f32::INFINITY; 2];
+    let mut hi = [f32::NEG_INFINITY; 2];
+    for p in parts.iter().flat_map(|p| p.positions.iter()) {
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+        }
+    }
+    (lo[0] <= hi[0] && lo[1] <= hi[1]).then(|| [f32::midpoint(lo[0], hi[0]), f32::midpoint(lo[1], hi[1])])
 }
 
 /// A setting the engine could not use: the setting kept its default.
