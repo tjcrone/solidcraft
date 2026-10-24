@@ -144,6 +144,8 @@ fn analysis_colours_reach_the_shader_in_its_order() {
 /// hold none at all.
 const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("navigation.rs", 1, "the navigation cube's face shading, made from a token"),
+    ("print_workspace.rs", 2, "the toolpath legend's swatches: the preview's own feature palette is the fact"),
+    ("printer_dashboard.rs", 1, "the white tint that carries a camera frame's pixels"),
     ("canvas.rs", 3, "white rings around manipulator handles"),
     (
         "body_gizmo.rs",
