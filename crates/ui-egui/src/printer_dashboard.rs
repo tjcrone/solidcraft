@@ -195,6 +195,9 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
             None => app.tr("print.unreachable").to_string(),
         };
         ui.colored_label(t.warning, text);
+        if let Some(e) = status["error"].as_str() {
+            ui.add(egui::Label::new(egui::RichText::new(e).small()).wrap());
+        }
     }
     ui.separator();
     ui.label(app.tr("printer.temperatures"));
