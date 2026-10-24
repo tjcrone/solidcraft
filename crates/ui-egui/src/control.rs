@@ -1175,8 +1175,8 @@ fn ui_set(app: &mut SolveApp, p: &Value) -> Outcome {
             {
                 return err(error);
             }
-            if (u.tab == "SLICE" || u.tab == "PRINTER") != crate::print_workspace::active(app)
-                && let Err(e) = crate::print_workspace::enter(app, u.tab == "SLICE" || u.tab == "PRINTER")
+            if crate::print_workspace::is_tab(&u.tab) != crate::print_workspace::active(app)
+                && let Err(e) = crate::print_workspace::enter(app, crate::print_workspace::is_tab(&u.tab))
             {
                 return err(e);
             }
