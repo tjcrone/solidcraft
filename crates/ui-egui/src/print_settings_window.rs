@@ -489,7 +489,7 @@ fn section_page(app: &mut SolveApp, ui: &mut egui::Ui, section: &Section) {
 
 fn form(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     let t = Tokens::get();
-    ui_kit::settings_form(ui, t.form_label_width * 1.4, add);
+    ui_kit::settings_form(ui, t.form_label_width * 2.2, add);
 }
 
 /// What the slicer refused on the last slice, by key.
