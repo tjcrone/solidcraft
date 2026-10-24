@@ -1380,57 +1380,84 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
     for path in &layer.paths {
         let c = feature_color(path.feature);
         let half = (path.width_mm * 0.5).max(0.05);
-        let prof = Profile::new(top, bottom, half, detail);
-        let pts = &path.points;
         if detail == Detail::Lines {
-            for w in pts.windows(2) {
+            for w in path.points.windows(2) {
                 if direction(w[0], w[1]).is_some() {
                     gpu.line([w[0][0], w[0][1], top], [w[1][0], w[1][1], top], c, 1.5, false);
                 }
             }
             continue;
         }
-        let closed = pts.len() > 2 && pts.first() == pts.last();
-        let mut previous: Option<[f32; 2]> = None;
-        for w in pts.windows(2) {
-            let (a, b) = (w[0], w[1]);
-            let Some((d, n)) = direction(a, b) else { continue };
-            bead_segment(gpu, &prof, a, b, n, c);
-            match previous {
-                Some(d0) => bead_join(gpu, &prof, a, d0, d, c),
-                None if !closed => bead_cap(gpu, &prof, a, d, n, -1.0, c),
-                None => {}
-            }
-            previous = Some(d);
-        }
-        let Some(d_last) = previous else { continue };
-        if closed {
-            // The loop's seam: the join between its last and first steps.
-            if let Some(((d_first, _), last)) = pts.windows(2).find_map(|w| direction(w[0], w[1])).zip(pts.last()) {
-                bead_join(gpu, &prof, *last, d_last, d_first, c);
-            }
-        } else if let Some(last) = pts.last() {
-            bead_cap(gpu, &prof, *last, d_last, [-d_last[1], d_last[0]], 1.0, c);
-        }
+        let prof = Profile::new(top, bottom, half, detail);
+        bead_path(gpu, &prof, &path.points, c);
     }
 }
 
-/// A bead the file lays outside the layers (a purge line), in the Custom colour, as tall as the
-/// nozzle stands over the bed up to one first layer.
+/// One path of bead: its straight runs, a fan on the outside of each corner, and either caps on
+/// its two ends or, for a closed loop, a fan at its seam.
+fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: [u8; 4]) {
+    let closed = pts.len() > 2 && pts.first() == pts.last();
+    let mut previous: Option<[f32; 2]> = None;
+    for w in pts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let Some((d, n)) = direction(a, b) else { continue };
+        bead_segment(gpu, prof, a, b, n, c);
+        match previous {
+            Some(d0) => bead_join(gpu, prof, a, d0, d, c),
+            None if !closed => bead_cap(gpu, prof, a, d, n, -1.0, c),
+            None => {}
+        }
+        previous = Some(d);
+    }
+    let Some(d_last) = previous else { return };
+    if closed {
+        // The loop's seam: the join between its last and first steps.
+        if let Some(((d_first, _), last)) = pts.windows(2).find_map(|w| direction(w[0], w[1])).zip(pts.last()) {
+            bead_join(gpu, prof, *last, d_last, d_first, c);
+        }
+    } else if let Some(last) = pts.last() {
+        bead_cap(gpu, prof, *last, d_last, [-d_last[1], d_last[0]], 1.0, c);
+    }
+}
+
+/// A bead the start or end template lays (the purge line): drawn as the layers' beads are, in
+/// runs of points at one height, each with its corners and ends.
 fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead, first_height: f32, detail: Detail) {
     let c = feature_color(Some(Feature::Custom));
     let half = (bead.width_mm * 0.5).max(0.05);
-    for w in bead.points.windows(2) {
-        let (a, b) = ([w[0][0], w[0][1]], [w[1][0], w[1][1]]);
-        let Some((_, n)) = direction(a, b) else { continue };
-        let top = w[1][2];
-        let bottom = (top - top.min(first_height).max(0.05)).max(0.0);
-        if detail == Detail::Lines {
-            gpu.line([a[0], a[1], top], [b[0], b[1], top], c, 1.5, false);
-            continue;
+    if detail == Detail::Lines {
+        for w in bead.points.windows(2) {
+            if direction([w[0][0], w[0][1]], [w[1][0], w[1][1]]).is_some() {
+                gpu.line(w[0], w[1], c, 1.5, false);
+            }
         }
-        let prof = Profile::new(top, bottom, half, detail);
-        bead_segment(gpu, &prof, a, b, n, c);
+        return;
+    }
+    let mut run: Vec<[f32; 2]> = Vec::new();
+    let mut run_z: Option<f32> = None;
+    let flush = |gpu: &mut GpuScene, run: &mut Vec<[f32; 2]>, z: f32| {
+        if run.len() >= 2 {
+            let bottom = (z - z.min(first_height).max(0.05)).max(0.0);
+            bead_path(gpu, &Profile::new(z, bottom, half, detail), run, c);
+        }
+        run.clear();
+    };
+    for p in &bead.points {
+        match run_z {
+            Some(z) if (p[2] - z).abs() <= 1e-3 => run.push([p[0], p[1]]),
+            Some(z) => {
+                flush(gpu, &mut run, z);
+                run.push([p[0], p[1]]);
+                run_z = Some(p[2]);
+            }
+            None => {
+                run.push([p[0], p[1]]);
+                run_z = Some(p[2]);
+            }
+        }
+    }
+    if let Some(z) = run_z {
+        flush(gpu, &mut run, z);
     }
 }
 
