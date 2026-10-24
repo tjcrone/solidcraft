@@ -54,6 +54,25 @@ pub struct State {
     key: Option<u64>,
     /// What the uploaded scene was made from.
     uploaded: Option<Source>,
+    /// The bed the settings describe, read once per change of the files or the design.
+    bed: Option<BedInfo>,
+    /// A drag of the part across the bed in Prepare.
+    drag: Option<Drag>,
+}
+
+/// The bed `print.bed` reported, and what it was read for.
+struct BedInfo {
+    key: (Vec<String>, u64),
+    rect: [f32; 4],
+}
+
+/// The part being dragged across the bed: where on the bed the drag began, the placement it
+/// began from, and where the pointer is now.
+#[derive(Clone, Copy, Debug)]
+struct Drag {
+    from: [f64; 2],
+    start: [f64; 2],
+    to: [f64; 2],
 }
 
 /// A request the printer host runs in the background, and what it is, so the panels can say
@@ -139,8 +158,18 @@ pub fn job_line(app: &mut SolveApp, ui: &mut egui::Ui, printer_state: &str) {
 /// What the canvas shows: the held slice's toolpaths, or the design's bodies before any slice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
-    Toolpaths { slice: usize, travels: bool },
-    Model { revision: u64, world: usize },
+    Toolpaths {
+        slice: usize,
+        travels: bool,
+    },
+    /// The design placed on the bed: the placement in thousandths of a millimetre and of a
+    /// degree, the bed in tenths of a millimetre.
+    Prepared {
+        revision: u64,
+        world: usize,
+        placement: [i64; 3],
+        bed: [i32; 4],
+    },
 }
 
 impl Default for State {
@@ -157,13 +186,24 @@ impl Default for State {
             slot: Arc::new(Mutex::new(None)),
             key: None,
             uploaded: None,
+            bed: None,
+            drag: None,
         }
     }
 }
 
 /// The Print workspace is showing: its Print tab or its Printer tab.
+/// The Print workspace's tabs: the model on the bed, the sliced preview, the printer.
+pub const PREPARE: &str = "PREPARE";
+pub const SLICE: &str = "SLICE";
+pub const DEVICE: &str = "DEVICE";
+
+pub fn is_tab(tab: &str) -> bool {
+    matches!(tab, PREPARE | SLICE | DEVICE)
+}
+
 pub fn active(app: &SolveApp) -> bool {
-    app.ui.tab == "SLICE" || app.ui.tab == "PRINTER"
+    is_tab(&app.ui.tab)
 }
 
 /// The colour a feature's beads are drawn in (straight sRGB). Built in OKLCH with the lightness
@@ -203,7 +243,7 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
         if crate::render_workspace::active(app) {
             crate::render_workspace::enter(app, false)?;
         }
-        app.ui.tab = "SLICE".into();
+        app.ui.tab = PREPARE.into();
     } else if active(app) {
         app.ui.tab = "MODEL".into();
     }
@@ -217,10 +257,7 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
 /// none. The camera target follows any change, so the part stays where it was on screen when
 /// the workspace changes or a new slice lands elsewhere on the bed.
 pub fn sync_view(app: &mut SolveApp) {
-    let wanted = match app.session.print_slice() {
-        Some(held) if active(app) => held.sliced.offset,
-        _ => [0.0; 3],
-    };
+    let wanted = if active(app) { placed_offset(app) } else { [0.0; 3] };
     let applied = app.print_workspace.view_offset;
     if wanted != applied {
         let d = view_shift(applied, wanted);
@@ -240,6 +277,9 @@ pub fn layer_key(app: &mut SolveApp, key: egui::Key, mods: egui::Modifiers) -> b
     if !active(app) || mods.command || mods.ctrl || mods.alt {
         return false;
     }
+    if app.ui.tab == PREPARE {
+        return nudge_key(app, key, mods);
+    }
     let step: i64 = match key {
         egui::Key::ArrowUp => 1,
         egui::Key::ArrowDown => -1,
@@ -256,6 +296,66 @@ pub fn layer_key(app: &mut SolveApp, key: egui::Key, mods: egui::Modifiers) -> b
 }
 
 /// The workspace menu's choice: `design`, `render` or `print`.
+/// The arrow keys on Prepare move the part a millimetre on the bed, ten with Shift.
+fn nudge_key(app: &mut SolveApp, key: egui::Key, mods: egui::Modifiers) -> bool {
+    let (dx, dy): (f64, f64) = match key {
+        egui::Key::ArrowUp => (0.0, 1.0),
+        egui::Key::ArrowDown => (0.0, -1.0),
+        egui::Key::ArrowLeft => (-1.0, 0.0),
+        egui::Key::ArrowRight => (1.0, 0.0),
+        _ => return false,
+    };
+    let step = if mods.shift { 10.0 } else { 1.0 };
+    let p = app.session.doc.print.placement;
+    place(app, json!({"x": p.x + dx * step, "y": p.y + dy * step}));
+    true
+}
+
+/// Run `print.place`, reporting a refusal on the status line.
+fn place(app: &mut SolveApp, params: serde_json::Value) {
+    if let Err(e) = app.run("print.place", params) {
+        app.set_status(e, true);
+    }
+}
+
+/// Where the part stands in printer coordinates: the slice's own offset on the Slice tab, else
+/// the placement laid over the bed the settings describe.
+fn placed_offset(app: &SolveApp) -> [f32; 3] {
+    if app.ui.tab == SLICE
+        && let Some(held) = app.session.print_slice()
+    {
+        return held.sliced.offset;
+    }
+    prepare_offset(app).unwrap_or([0.0; 3])
+}
+
+/// The design's offset on the bed before any slice: its footprint's centre goes to the bed's
+/// centre plus the placement, and it sits on the bed.
+fn prepare_offset(app: &SolveApp) -> Option<[f32; 3]> {
+    let bed = app.print_workspace.bed.as_ref()?.rect;
+    let b = solidcraft_engine::product_scene::extract(&app.session).ok()?.bounds;
+    if b.is_empty() {
+        return None;
+    }
+    let p = app.session.doc.print.placement;
+    let c = b.center();
+    Some([f32::midpoint(bed[0], bed[2]) + p.x as f32 - c.x as f32, f32::midpoint(bed[1], bed[3]) + p.y as f32 - c.y as f32, -(b.min.z as f32)])
+}
+
+/// Read the bed from the settings when the files or the design changed.
+fn bed_info(app: &mut SolveApp) {
+    let key = (app.print_workspace.settings.config_files.clone(), app.session.revision);
+    if app.print_workspace.bed.as_ref().is_some_and(|b| b.key == key) {
+        return;
+    }
+    let rect = app
+        .run("print.bed", json!({"config": key.0}))
+        .ok()
+        .and_then(|v| serde_json::from_value::<[f32; 4]>(v["bed"].clone()).ok())
+        .filter(|r| r.iter().all(|v| v.is_finite()) && r[2] > r[0] && r[3] > r[1]);
+    app.print_workspace.bed = rect.map(|rect| BedInfo { key, rect });
+}
+
 pub fn switch(app: &mut SolveApp, workspace: &str) -> Result<(), String> {
     match workspace {
         "print" => enter(app, true),
@@ -306,6 +406,7 @@ pub fn start(app: &mut SolveApp, id: &str) {
         "print.save" => save(app),
         "print.upload" => send_to_printer(app, false),
         "print.cancel" => cancel_print(app),
+        "print.place" => place(app, json!({"centre": true})),
         _ => {}
     }
 }
@@ -457,37 +558,11 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             crate::ui_kit::scope(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.heading(app.tr("print.slice_title"));
-                    let n = app.print_workspace.settings.config_files.len();
-                    let files = if n == 0 {
-                        app.tr("print.config_none").to_string()
+                    if app.ui.tab == PREPARE {
+                        prepare_panel(app, ui);
                     } else {
-                        crate::i18n::format("print.config_count", &[("n", &n.to_string())])
-                    };
-                    let overrides = app.session.doc.print.overlay.len();
-                    ui.label(files);
-                    if overrides > 0 {
-                        ui.small(crate::i18n::format("print.overrides_count", &[("n", &overrides.to_string())]));
+                        slice_panel(app, ui);
                     }
-                    if crate::ui_kit::button(ui, app.tr("print.open_settings"), crate::ui_kit::Button::Normal).clicked() {
-                        app.start("print.settings.set");
-                    }
-                    if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Normal).clicked() {
-                        slice(app);
-                    }
-                    ui.separator();
-                    match app.session.print_slice().cloned() {
-                        None => {
-                            ui.label(app.tr("print.not_sliced"));
-                        }
-                        Some(held) => {
-                            result_rows(app, ui, &held);
-                            ui.separator();
-                            toolpath_controls(app, ui, &held);
-                        }
-                    }
-                    ui.separator();
-                    printer_rows(app, ui);
                     ui.separator();
                     if crate::ui_kit::button(ui, app.tr("print.return_design"), crate::ui_kit::Button::Normal).clicked()
                         && let Err(e) = enter(app, false)
@@ -498,6 +573,74 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             });
         });
     confirm_print(app, ui.ctx());
+}
+
+/// Prepare: the profiles, where the part sits on the bed, and the Slice button.
+fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
+    ui.heading(app.tr("print.prepare_title"));
+    let n = app.print_workspace.settings.config_files.len();
+    let files = if n == 0 { app.tr("print.config_none").to_string() } else { crate::i18n::format("print.config_count", &[("n", &n.to_string())]) };
+    ui.label(files);
+    let overrides = app.session.doc.print.overlay.len();
+    if overrides > 0 {
+        ui.small(crate::i18n::format("print.overrides_count", &[("n", &overrides.to_string())]));
+    }
+    if crate::ui_kit::button(ui, app.tr("print.open_settings"), crate::ui_kit::Button::Normal).clicked() {
+        app.start("print.settings.set");
+    }
+    ui.separator();
+    ui.heading(app.tr("print.placement_title"));
+    wrapped_small(ui, app.tr("print.placement_hint"));
+    let p = app.session.doc.print.placement;
+    let (mut x, mut y, mut r) = (p.x, p.y, p.rotation);
+    let t = Tokens::get();
+    crate::ui_kit::settings_form(ui, t.form_label_width, |ui| {
+        let x_label = app.tr("print.place_x").to_string();
+        let y_label = app.tr("print.place_y").to_string();
+        let r_label = app.tr("print.place_rotation").to_string();
+        crate::ui_kit::row(ui, &x_label, |ui| {
+            if crate::ui_kit::number_field(ui, &mut x, -500.0..=500.0, 1.0, " mm").changed() {
+                place(app, json!({"x": x}));
+            }
+        });
+        crate::ui_kit::row(ui, &y_label, |ui| {
+            if crate::ui_kit::number_field(ui, &mut y, -500.0..=500.0, 1.0, " mm").changed() {
+                place(app, json!({"y": y}));
+            }
+        });
+        crate::ui_kit::row(ui, &r_label, |ui| {
+            if crate::ui_kit::number_field(ui, &mut r, -360.0..=360.0, 5.0, "°").changed() {
+                place(app, json!({"rotation": r}));
+            }
+        });
+    });
+    if crate::ui_kit::button(ui, app.tr("cmd.print.place"), crate::ui_kit::Button::Enabled(!p.is_default())).clicked() {
+        place(app, json!({"centre": true}));
+    }
+    ui.separator();
+    if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Primary).clicked() {
+        slice(app);
+    }
+}
+
+/// Slice: the result, the toolpath legend, and the way to the printer.
+fn slice_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
+    ui.heading(app.tr("print.slice_title"));
+    match app.session.print_slice().cloned() {
+        None => {
+            wrapped_small(ui, app.tr("print.slice_from_prepare"));
+            if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Primary).clicked() {
+                slice(app);
+            }
+        }
+        Some(held) => {
+            result_rows(app, ui, &held);
+            ui.separator();
+            toolpath_controls(app, ui, &held);
+            ui.separator();
+            printer_rows(app, ui);
+        }
+    }
 }
 
 /// The "start printing?" question, open from Upload and print.
@@ -527,9 +670,9 @@ fn confirm_print(app: &mut SolveApp, ctx: &egui::Context) {
 }
 
 /// The printer: its address, what it is doing, and the upload and cancel buttons.
-fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
-    ui.heading(app.tr("print.printer_title"));
+/// The printer's Moonraker address, kept between runs; a change installs the host anew.
+pub(crate) fn address_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
+    load_settings(app);
     ui.label(app.tr("print.printer_url"));
     let before = app.print_workspace.settings.printer_url.clone();
     let hint = app.tr("print.printer_url_hint").to_string();
@@ -538,6 +681,13 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
         save_settings(app);
     }
     wrapped_small(ui, app.tr("print.printer_url_help"));
+    sync_printer(app);
+}
+
+/// The printer's state and the upload buttons, on the Slice panel.
+fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
+    let t = Tokens::get();
+    ui.heading(app.tr("print.printer_title"));
     sync_printer(app);
     let status = match app.run("print.status", json!({})) {
         Ok(v) => v,
@@ -663,9 +813,14 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     app.viewport.rect = Some(rect);
     crate::viewport::refresh_layout(app, ui.ctx().pixels_per_point());
     let response = ui.interact(rect, ui.id().with("print_preview"), Sense::click_and_drag());
+    load_settings(app);
+    bed_info(app);
     sync_view(app);
     crate::printer_dashboard::sync_camera(app);
-    crate::navigation::handle(app, ui, rect, &response, crate::navigation::NavCaps::RENDER);
+    let moving = app.ui.tab == PREPARE && move_on_bed(app, ui, rect, &response);
+    if !moving {
+        crate::navigation::handle(app, ui, rect, &response, crate::navigation::NavCaps::RENDER);
+    }
     let t = Tokens::get();
     ui.painter().rect_filled(rect, 0.0, t.viewport_bottom);
     let result = (|| -> Result<(), String> {
@@ -680,7 +835,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         let eye = camera.eye();
         let ppp = ui.ctx().pixels_per_point();
         let clip = match (app.session.print_slice(), app.print_workspace.top_layer) {
-            (Some(held), Some(i)) => held.sliced.toolpaths.layers.get(i).map_or([0.0; 4], |l| [0.0, 0.0, 1.0, l.z + 1e-3]),
+            (Some(held), Some(i)) if app.ui.tab == SLICE => held.sliced.toolpaths.layers.get(i).map_or([0.0; 4], |l| [0.0, 0.0, 1.0, l.z + 1e-3]),
             _ => [0.0; 4],
         };
         let slot = app.print_workspace.slot.clone();
@@ -717,7 +872,96 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     if let Err(error) = result {
         ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, error, egui::FontId::proportional(t.font_body), t.text_dim);
     }
-    layer_slider(app, ui, rect);
+    if app.ui.tab == SLICE {
+        layer_slider(app, ui, rect);
+    }
+    if let Some(drag) = app.print_workspace.drag {
+        footprint_ghost(app, ui, rect, drag);
+    }
+}
+
+/// A drag that starts on the part moves it across the bed; the placement is set when the drag
+/// ends. True while a drag is on, so the camera stays still.
+fn move_on_bed(app: &mut SolveApp, ui: &egui::Ui, rect: egui::Rect, response: &egui::Response) -> bool {
+    let proj = crate::viewport::projection(app, rect);
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && let Some(pos) = response.interact_pointer_pos()
+        && over_part(app, &proj, pos)
+        && let Some(hit) = bed_hit(&proj, pos)
+    {
+        let p = app.session.doc.print.placement;
+        app.print_workspace.drag = Some(Drag { from: hit, start: [p.x, p.y], to: hit });
+    }
+    let Some(mut drag) = app.print_workspace.drag else { return false };
+    if let Some(pos) = ui.input(|i| i.pointer.latest_pos())
+        && let Some(hit) = bed_hit(&proj, pos)
+    {
+        drag.to = hit;
+    }
+    app.print_workspace.drag = Some(drag);
+    if response.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
+        app.print_workspace.drag = None;
+        let (x, y) = (drag.start[0] + drag.to[0] - drag.from[0], drag.start[1] + drag.to[1] - drag.from[1]);
+        if x.is_finite() && y.is_finite() {
+            place(app, json!({"x": (x * 10.0).round() / 10.0, "y": (y * 10.0).round() / 10.0}));
+        }
+    }
+    true
+}
+
+/// Where a screen point's ray meets the bed plane, in printer coordinates.
+fn bed_hit(proj: &crate::viewport::Proj, pos: egui::Pos2) -> Option<[f64; 2]> {
+    let (o, d) = proj.ray(pos);
+    if d.z.abs() < 1e-9 {
+        return None;
+    }
+    let t = -o.z / d.z;
+    if !t.is_finite() || t < 0.0 {
+        return None;
+    }
+    Some([o.x + d.x * t, o.y + d.y * t])
+}
+
+/// The eight corners of the part's bounds where it stands, in printer coordinates.
+fn placed_corners(app: &SolveApp, shift: [f64; 2]) -> Option<[Vec3; 8]> {
+    let b = solidcraft_engine::product_scene::extract(&app.session).ok()?.bounds;
+    if b.is_empty() {
+        return None;
+    }
+    let o = prepare_offset(app)?;
+    let (ox, oy, oz) = (f64::from(o[0]) + shift[0], f64::from(o[1]) + shift[1], f64::from(o[2]));
+    let mut out = [Vec3::ZERO; 8];
+    for (i, c) in out.iter_mut().enumerate() {
+        let x = if i & 1 == 0 { b.min.x } else { b.max.x };
+        let y = if i & 2 == 0 { b.min.y } else { b.max.y };
+        let z = if i & 4 == 0 { b.min.z } else { b.max.z };
+        *c = Vec3::new(x + ox, y + oy, z + oz);
+    }
+    Some(out)
+}
+
+/// Whether a screen point lies over the part's bounds, as they project.
+fn over_part(app: &SolveApp, proj: &crate::viewport::Proj, pos: egui::Pos2) -> bool {
+    let Some(corners) = placed_corners(app, [0.0; 2]) else { return false };
+    let mut rect = egui::Rect::NOTHING;
+    for c in corners {
+        if let Some(p) = proj.to_screen(c) {
+            rect.extend_with(p);
+        }
+    }
+    rect.is_positive() && rect.contains(pos)
+}
+
+/// The outline of the part's footprint where the drag would put it.
+fn footprint_ghost(app: &SolveApp, ui: &egui::Ui, rect: egui::Rect, drag: Drag) {
+    let proj = crate::viewport::projection(app, rect);
+    let shift = [drag.to[0] - drag.from[0], drag.to[1] - drag.from[1]];
+    let Some(corners) = placed_corners(app, shift) else { return };
+    let t = Tokens::get();
+    let bottom: Vec<egui::Pos2> = [0, 1, 3, 2].iter().filter_map(|&i| proj.to_screen(corners[i])).collect();
+    if bottom.len() == 4 {
+        ui.painter().add(egui::Shape::closed_line(bottom, egui::Stroke::new(2.0, t.accent)));
+    }
 }
 
 /// The highest layer shown, 1-based, for a slice of `n` layers.
@@ -765,20 +1009,23 @@ fn layer_readout(ui: &mut egui::Ui, lane: &egui::Rect, slider: &egui::Rect, show
 
 /// Build the scene for what the canvas shows, when that changed.
 fn upload(app: &mut SolveApp) -> Result<(), String> {
+    let p = app.session.doc.print.placement;
+    let placement = [(p.x * 1000.0).round() as i64, (p.y * 1000.0).round() as i64, (p.rotation * 1000.0).round() as i64];
+    let bed = app.print_workspace.bed.as_ref().map_or([0; 4], |b| b.rect.map(|v| (v * 10.0).round() as i32));
     let source = match app.session.print_slice() {
-        Some(held) => Source::Toolpaths { slice: Arc::as_ptr(held) as usize, travels: app.print_workspace.show_travels },
-        None => Source::Model { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize },
+        Some(held) if app.ui.tab == SLICE => Source::Toolpaths { slice: Arc::as_ptr(held) as usize, travels: app.print_workspace.show_travels },
+        _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize, placement, bed },
     };
     if app.print_workspace.uploaded == Some(source) {
         return Ok(());
     }
-    let scene = match app.session.print_slice().cloned() {
-        Some(held) => {
+    let scene = match (source, app.session.print_slice().cloned()) {
+        (Source::Toolpaths { .. }, Some(held)) => {
             let mut scene = toolpath_scene(&held, app.print_workspace.show_travels)?;
             shell(app, &mut scene, held.sliced.offset);
             scene
         }
-        None => model_scene(app)?,
+        _ => prepared_scene(app)?,
     };
     if let Ok(mut slot) = app.print_workspace.slot.lock() {
         *slot = Some(scene);
@@ -815,10 +1062,19 @@ fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
 const SHELL_ALPHA: u8 = 24;
 
 /// The design's bodies in a neutral grey, with the bed as a grid when one is known.
-fn model_scene(app: &SolveApp) -> Result<GpuScene, String> {
+/// The design's bodies where the placement puts them, turned about their footprint's centre and
+/// standing on the bed the settings describe.
+fn prepared_scene(app: &SolveApp) -> Result<GpuScene, String> {
     let scene = solidcraft_engine::product_scene::extract(&app.session).map_err(|e| e.to_string())?;
     let mut gpu = GpuScene::default();
     let grey = [0xb4, 0xba, 0xc4, 255];
+    let offset = prepare_offset(app).unwrap_or([0.0; 3]);
+    let c = scene.bounds.center().to_f32();
+    let (sin, cos) = (app.session.doc.print.placement.rotation as f32).to_radians().sin_cos();
+    let turn = |v: [f32; 3], about: [f32; 2]| {
+        let (dx, dy) = (v[0] - about[0], v[1] - about[1]);
+        [about[0] + dx * cos - dy * sin, about[1] + dx * sin + dy * cos, v[2]]
+    };
     let mut bytes = 0usize;
     for body in &scene.meshes {
         for triangle in &body.mesh.triangles {
@@ -829,9 +1085,14 @@ fn model_scene(app: &SolveApp) -> Result<GpuScene, String> {
             for i in *triangle {
                 let p = body.mesh.positions.get(i as usize).ok_or("invalid product triangle")?.to_f32();
                 let n = body.mesh.normals.get(i as usize).ok_or("invalid product triangle")?.to_f32();
-                gpu.tri(p, n, grey);
+                let p = turn(p, [c[0], c[1]]);
+                let n = turn(n, [0.0, 0.0]);
+                gpu.tri([p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]], n, grey);
             }
         }
+    }
+    if let Some(b) = &app.print_workspace.bed {
+        bed(&mut gpu, b.rect);
     }
     Ok(gpu)
 }

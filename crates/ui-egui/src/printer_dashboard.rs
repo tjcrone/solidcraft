@@ -27,7 +27,7 @@ pub struct State {
 }
 
 pub fn active(app: &SolveApp) -> bool {
-    app.ui.tab == "PRINTER"
+    app.ui.tab == crate::print_workspace::DEVICE
 }
 
 /// A ribbon button or shortcut of a printer command.
@@ -147,7 +147,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                     rows(app, ui);
                     ui.separator();
                     if crate::ui_kit::button(ui, app.tr("printer.back_to_print"), crate::ui_kit::Button::Normal).clicked() {
-                        app.ui.tab = "SLICE".into();
+                        app.ui.tab = crate::print_workspace::SLICE.into();
                     }
                 });
             });
@@ -156,6 +156,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
 
 fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
+    crate::print_workspace::address_rows(app, ui);
     let status = match app.run("print.status", json!({})) {
         Ok(v) => v,
         Err(e) => {
@@ -165,7 +166,6 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     };
     if status["installed"] != true {
         ui.label(app.tr("print.printer_none"));
-        ui.small(app.tr("printer.set_address_hint"));
         return;
     }
     let state = status["state"].as_str().unwrap_or("").to_string();
