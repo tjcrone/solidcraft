@@ -44,6 +44,8 @@ struct Shared {
     next_job: AtomicU64,
     snapshot: Mutex<Snapshot>,
     polls: AtomicU64,
+    /// A refresh was asked for: the next poll fetches the camera list too.
+    refresh_wanted: std::sync::atomic::AtomicBool,
     camera: Mutex<Camera>,
 }
 
@@ -102,6 +104,7 @@ impl Moonraker {
             next_job: AtomicU64::new(0),
             snapshot: Mutex::new(Snapshot::default()),
             polls: AtomicU64::new(0),
+            refresh_wanted: std::sync::atomic::AtomicBool::new(false),
             camera: Mutex::new(Camera::default()),
         });
         let weak = Arc::downgrade(&shared);
@@ -173,7 +176,11 @@ impl Shared {
     /// One status request; its outcome lands in the snapshot either way.
     fn poll(&self) {
         let n = self.polls.fetch_add(1, Ordering::SeqCst);
-        if n.is_multiple_of(WEBCAM_POLLS)
+        // The camera list is asked for now and then, on every poll while it is empty (the
+        // printer may have been off when the app started), and at once when asked to refresh.
+        let asked = self.refresh_wanted.swap(false, Ordering::SeqCst);
+        let empty = lock(&self.snapshot).webcams.is_empty();
+        if (n.is_multiple_of(WEBCAM_POLLS) || empty || asked)
             && let Ok(list) = self.fetch_webcams()
         {
             lock(&self.snapshot).webcams = list;
@@ -370,6 +377,13 @@ impl PrinterHost for Moonraker {
             (None, Some(e)) => Err(e.clone()),
             (None, None) => Ok(None),
         }
+    }
+
+    fn refresh(&self) {
+        self.shared.refresh_wanted.store(true, Ordering::SeqCst);
+        // A poll now, off the command thread, rather than at the loop's next tick.
+        let shared = self.shared.clone();
+        let _ = std::thread::Builder::new().name("moonraker-refresh".into()).spawn(move || shared.poll());
     }
 
     fn status(&self) -> PrinterStatus {
