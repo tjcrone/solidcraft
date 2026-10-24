@@ -27,6 +27,8 @@ const WEBCAMS: &str = "print.webcams";
 const SETTINGS_GET: &str = "print.settings.get";
 const SETTINGS_SET: &str = "print.settings.set";
 const SETTINGS_CLEAR: &str = "print.settings.clear";
+const PLACE: &str = "print.place";
+const BED: &str = "print.bed";
 /// Most degrees a nozzle or bed may be asked for.
 const MAX_NOZZLE_C: f64 = 350.0;
 const MAX_BED_C: f64 = 150.0;
@@ -75,7 +77,46 @@ pub static COMMANDS: &[CommandSpec] = &[
         "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
     ),
     CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
+    CommandSpec::new(PLACE, "Place on Bed", place).doc_only().icon("move").params(
+        "x?: mm from the bed's centre; y?: mm; rotation?: degrees about Z, about the design's footprint centre; centre?: true puts it back in the middle, unturned → placement: {x, y, rotation}. Saved in the design; print.slice puts the design there",
+    ),
+    CommandSpec::new(BED, "Print Bed", bed).noundo().doc_only().icon("inspect").params(
+        "config?: path, or [paths], of the settings files → bed: [min_x, min_y, max_x, max_y], printable_height, placement: {x, y, rotation}. What the settings describe, without slicing",
+    ),
 ];
+
+fn place(s: &mut Session, p: &Value) -> Result<Value> {
+    let number = |key: &str| -> Result<Option<f64>> {
+        match p.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => v.as_f64().filter(|x| x.is_finite()).map(Some).ok_or_else(|| bad(PLACE, format!("`{key}` must be a finite number"))),
+        }
+    };
+    let mut settings = (*s.doc.print).clone();
+    if p.get("centre").and_then(Value::as_bool) == Some(true) || p.get("center").and_then(Value::as_bool) == Some(true) {
+        settings.placement = Default::default();
+    }
+    if let Some(x) = number("x")? {
+        settings.placement.x = x;
+    }
+    if let Some(y) = number("y")? {
+        settings.placement.y = y;
+    }
+    if let Some(r) = number("rotation")? {
+        settings.placement.rotation = r;
+    }
+    settings.validate().map_err(|e| bad(PLACE, e.to_string()))?;
+    if settings != *s.doc.print {
+        s.doc_mut().print = std::sync::Arc::new(settings);
+    }
+    Ok(json!({"placement": s.doc.print.placement}))
+}
+
+fn bed(s: &mut Session, p: &Value) -> Result<Value> {
+    let config = config_text(s, p)?;
+    let (bed, printable_height) = solidcraft_manufacture::bed_of(&config).map_err(|e| EngineError::Other(format!("{BED}: {e}")))?;
+    Ok(json!({"bed": bed, "printable_height": printable_height, "placement": s.doc.print.placement}))
+}
 
 fn settings_get(s: &mut Session, p: &Value) -> Result<Value> {
     let (files, from) = config_files(p, SETTINGS_GET)?;
@@ -258,7 +299,9 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     let bodies = string_list(p, "bodies");
     let parts = parts(s, &bodies)?;
     let slicer = solidcraft_manufacture::default_slicer();
-    let sliced = slicer.slice(&Job { parts: &parts, config: &config }).map_err(|e| EngineError::Other(format!("{SLICE}: {e}")))?;
+    let pl = s.doc.print.placement;
+    let placement = solidcraft_manufacture::Placement { x: pl.x as f32, y: pl.y as f32, rotation_deg: pl.rotation as f32 };
+    let sliced = slicer.slice(&Job { parts: &parts, config: &config, placement }).map_err(|e| EngineError::Other(format!("{SLICE}: {e}")))?;
     if let Some(path) = path {
         solidcraft_io::vfs::write(path, &sliced.gcode).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
     }
@@ -312,6 +355,7 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
         "bed": held.sliced.bed,
         "printable_height": held.sliced.printable_height,
         "offset": held.sliced.offset,
+        "placement": held.doc.print.placement,
         "file_beads": {"count": paths.file_beads.len(), "length_mm": paths.file_beads.iter().map(|b| b.length_mm()).sum::<f64>()},
         "bounds": bounds,
         "z": paths.layers.iter().map(|l| l.z).collect::<Vec<_>>(),

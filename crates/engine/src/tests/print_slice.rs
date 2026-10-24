@@ -252,3 +252,37 @@ fn a_relative_path_is_refused_and_nothing_is_written() {
     assert_eq!(run(&mut s, "print.save", json!({"path": ok}))["path"], ok);
     std::fs::remove_file(&ok).ok();
 }
+
+#[test]
+fn the_design_remembers_where_it_sits_on_the_bed() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+    let settings: Value = serde_json::from_str(KLIPPER_02).unwrap();
+    run(&mut s, "print.slice", json!({"settings": settings}));
+    let centred = run(&mut s, "print.preview", json!({}));
+    let bed = run(&mut s, "print.bed", json!({"config": []}));
+    assert!(bed["bed"][2].as_f64().unwrap() > bed["bed"][0].as_f64().unwrap(), "{bed}");
+    assert_eq!(bed["placement"], json!({"x": 0.0, "y": 0.0, "rotation": 0.0}));
+    // Placing is undoable and saved with the design.
+    let placed = run(&mut s, "print.place", json!({"x": 25, "y": -10}));
+    assert_eq!(placed["placement"], json!({"x": 25.0, "y": -10.0, "rotation": 0.0}));
+    assert!(s.print_slice().is_some_and(|h| h.stale(&s.doc)), "a new placement makes the slice stale");
+    run(&mut s, "print.slice", json!({"settings": settings}));
+    let moved = run(&mut s, "print.preview", json!({}));
+    let (a, b) = (&centred["offset"], &moved["offset"]);
+    assert!((b[0].as_f64().unwrap() - a[0].as_f64().unwrap() - 25.0).abs() < 1e-3, "{a} {b}");
+    assert!((b[1].as_f64().unwrap() - a[1].as_f64().unwrap() + 10.0).abs() < 1e-3, "{a} {b}");
+    assert_eq!(moved["placement"]["x"], 25.0);
+    run(&mut s, "print.place", json!({"rotation": 90}));
+    assert_eq!(s.doc.print.placement.rotation, 90.0);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.print.placement.rotation, 0.0);
+    assert_eq!(run(&mut s, "print.place", json!({"centre": true}))["placement"], json!({"x": 0.0, "y": 0.0, "rotation": 0.0}));
+    for bad in [json!({"x": "far"}), json!({"x": 1e9}), json!({"rotation": 720}), json!({"y": [1]})] {
+        assert!(s.execute("print.place", &bad).is_err(), "{bad}");
+    }
+    let text = serde_json::to_string(&*s.doc).unwrap();
+    assert!(!text.contains("placement"), "a centred design saves no placement: {text}");
+    run(&mut s, "print.place", json!({"x": 1}));
+    assert!(serde_json::to_string(&*s.doc).unwrap().contains("\"placement\""));
+}
