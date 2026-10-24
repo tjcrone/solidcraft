@@ -1309,6 +1309,7 @@
   "cmd.print.status": "プリンターの状態",
   "cmd.print.upload": "プリンターにアップロード",
   "cmd.print.webcams": "プリンターのカメラ",
+  "cmd.render_aging_describe": "レイヤー式表面エイジング",
   "cmd.render_backends": "レンダリング バックエンド",
   "cmd.render_batch": "すべてのショットをレンダリング",
   "cmd.render_camera_fit": "レンダー対象をフレームに合わせる",
