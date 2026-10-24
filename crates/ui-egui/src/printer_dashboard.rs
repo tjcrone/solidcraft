@@ -157,6 +157,11 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
 fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     crate::print_workspace::address_rows(app, ui);
+    if crate::ui_kit::button(ui, app.tr("printer.refresh"), crate::ui_kit::Button::Small).on_hover_text(app.tr("printer.refresh_hint")).clicked()
+        && let Err(e) = app.run("print.refresh", json!({}))
+    {
+        app.set_status(e, true);
+    }
     let status = match app.run("print.status", json!({})) {
         Ok(v) => v,
         Err(e) => {
