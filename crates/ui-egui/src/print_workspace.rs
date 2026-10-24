@@ -1054,6 +1054,9 @@ fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
     let Ok(scene) = solidcraft_engine::product_scene::extract(&app.session) else { return };
     let t = Tokens::get();
     let c = [t.text_dim.r(), t.text_dim.g(), t.text_dim.b(), SHELL_ALPHA];
+    // Turned as the slice turned it: about the footprint's centre, before the offset.
+    let about = scene.bounds.center().to_f32();
+    let (sin, cos) = (app.session.doc.print.placement.rotation as f32).to_radians().sin_cos();
     let mut bytes = 0usize;
     for body in &scene.meshes {
         for triangle in &body.mesh.triangles {
@@ -1064,7 +1067,10 @@ fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
             let corners = triangle.map(|i| body.mesh.positions.get(i as usize).map(|p| p.to_f32()));
             let [Some(a), Some(b), Some(d)] = corners else { continue };
             for p in [a, b, d] {
-                gpu.guide_tri([p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]], c);
+                let (dx, dy) = (p[0] - about[0], p[1] - about[1]);
+                let x = about[0] + dx * cos - dy * sin;
+                let y = about[1] + dx * sin + dy * cos;
+                gpu.guide_tri([x + offset[0], y + offset[1], p[2] + offset[2]], c);
             }
         }
     }
