@@ -39,15 +39,15 @@ const MAX_PREVIEW_POINTS: usize = 2_000_000;
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(SLICE, "Slice", slice).noundo().at("PREPARE", "PREPARE").icon("mesh_export").params(
-        "path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files' and the design's own overrides (print.settings.set); bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written",
+        "check?: true only answers whether the held slice already matches this request → current: bool; path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files' and the design's own overrides (print.settings.set); bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written. A request the held slice already answers (same design, settings and bodies) is not sliced again: the held result comes back with reused: true",
     ),
     CommandSpec::new(PREVIEW, "Preview Toolpaths", preview).noundo().doc_only().icon("inspect").params(
         "layer?: index (0 = first) → stale (the design changed since the slice), slicer, layers, segments, time_s, filament_mm, filament_g, bed: [min_x, min_y, max_x, max_y], printable_height, offset: [x, y, z] (plate coordinates = design coordinates + offset; the toolpaths, bounds and bed are plate coordinates, as the G-code is), bounds: {min: [x, y, z], max: [x, y, z]}, file_beads: {count, length_mm} (beads the start and end templates lay on the bed), z: [top of each layer], features: [{feature, label, paths, length_mm}]; with layer: layer: {index, z, height, time_s, paths: [{feature, tool, width_mm, speed_mm_s, points: [[x, y], …]}]}. Needs a print.slice in this session",
     ),
-    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("SLICE", "OUTPUT").icon("export").params(
+    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("PREVIEW", "OUTPUT").icon("export").params(
         "path: the .gcode file to write with the G-code of the session's last print.slice → path, bytes, stale (the design changed since the slice)",
     ),
-    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().at("SLICE", "OUTPUT").icon("send").params(
+    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().at("PREVIEW", "OUTPUT").icon("send").params(
         "name?: the file name on the printer (default: the design's name; always ends in .gcode); start?: bool (print it at once; default false) → job, name, bytes, start. Sends the session's last print.slice to the installed printer in the background; print.job reports progress. Refused while the design has changed since the slice, and without a printer",
     ),
     CommandSpec::new(JOB, "Printer Job", job).noundo().doc_only().icon("list").params(
@@ -306,6 +306,23 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     let path = output_path(p, SLICE)?;
     let config = config_text(s, p)?;
     let bodies = string_list(p, "bodies");
+    // The held slice already answers this request: the same design (placement and overrides
+    // included), the same settings text (a profile file edited on disk reads differently) and
+    // the same bodies.
+    let current = s.print_slice().filter(|h| !h.stale(&s.doc) && h.config == config && h.bodies == bodies).cloned();
+    if bool_(p, "check").unwrap_or(false) {
+        return Ok(json!({"current": current.is_some()}));
+    }
+    if let Some(held) = current {
+        if let Some(path) = path {
+            solidcraft_io::vfs::write(path, &held.sliced.gcode).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+        }
+        let mut out = slice_result(&held.sliced, &held.slicer, path);
+        if let Value::Object(map) = &mut out {
+            map.insert("reused".into(), Value::Bool(true));
+        }
+        return Ok(out);
+    }
     let parts = parts(s, &bodies)?;
     let slicer = solidcraft_manufacture::default_slicer();
     let pl = s.doc.print.placement;
@@ -314,6 +331,13 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(path) = path {
         solidcraft_io::vfs::write(path, &sliced.gcode).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
     }
+    let out = slice_result(&sliced, &slicer.name(), path);
+    s.set_print_slice(Some(HeldSlice { sliced, doc: s.doc.clone(), bodies, config, slicer: slicer.name() }));
+    Ok(out)
+}
+
+/// What print.slice reports about a slice.
+fn slice_result(sliced: &solidcraft_manufacture::Sliced, slicer: &str, path: Option<&str>) -> Value {
     let mut out = json!({
         "bytes": sliced.gcode.len(),
         "layers": sliced.layers,
@@ -321,7 +345,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
         "time_s": sliced.time_s,
         "filament_mm": sliced.filament_mm,
         "filament_g": sliced.filament_g,
-        "slicer": slicer.name(),
+        "slicer": slicer,
         "refused": sliced.report.refused.iter().map(|r| json!({"key": r.key, "value": r.value, "reason": r.reason})).collect::<Vec<_>>(),
         "ignored": sliced.report.ignored,
         "warnings": sliced.report.warnings,
@@ -329,8 +353,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     if let (Some(path), Value::Object(map)) = (path, &mut out) {
         map.insert("path".into(), Value::String(path.to_string()));
     }
-    s.set_print_slice(Some(HeldSlice { sliced, doc: s.doc.clone(), bodies, config, slicer: slicer.name() }));
-    Ok(out)
+    out
 }
 
 fn held<'a>(s: &'a Session, cmd: &str) -> Result<&'a HeldSlice> {
