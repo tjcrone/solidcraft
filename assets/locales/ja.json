@@ -2660,7 +2660,7 @@
   "print.upload_short": "アップロード",
   "print.value_example": "0.2",
   "print.warnings": "警告",
-  "printer.back_to_print": "プリントに戻る",
+  "printer.back_to_print": "スライスに戻る",
   "printer.camera_error": "カメラ: {error}",
   "printer.camera_waiting": "カメラを待っています…",
   "printer.no_camera": "プリンターにカメラがありません",

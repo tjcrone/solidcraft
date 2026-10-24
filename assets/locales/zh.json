@@ -2660,7 +2660,7 @@
   "print.upload_short": "上传",
   "print.value_example": "0.2",
   "print.warnings": "警告",
-  "printer.back_to_print": "返回打印",
+  "printer.back_to_print": "返回切片",
   "printer.camera_error": "摄像头：{error}",
   "printer.camera_waiting": "正在等待摄像头…",
   "printer.no_camera": "打印机没有摄像头",
