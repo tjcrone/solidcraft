@@ -251,6 +251,9 @@ pub fn feature_color(feature: Option<Feature>) -> [u8; 4] {
 
 const TRAVEL_COLOR: [u8; 4] = [0x6a, 0x8f, 0xd0, 160];
 
+/// The colour of the beads the start and end templates lay (the purge line).
+const FILE_BEAD_COLOR: [u8; 4] = [0x3a, 0x6e, 0xe8, 255];
+
 /// Enter (`on`) or leave the workspace. The view does not jump: Print shows the part where the
 /// slicer put it on the bed, and the camera target moves by that placement with it (`sync_view`).
 pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
@@ -875,7 +878,7 @@ fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
     if !paths.file_beads.is_empty() {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
-            let c = feature_color(Some(Feature::Custom));
+            let c = FILE_BEAD_COLOR;
             ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c[0], c[1], c[2]));
             ui.label(app.tr("print.file_beads"));
             ui.small(format!("{:.2} m", paths.file_beads.iter().map(|b| b.length_mm()).sum::<f64>() / 1000.0));
@@ -1443,7 +1446,7 @@ fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: [u8; 4]) {
 /// A bead the start or end template lays (the purge line): drawn as the layers' beads are, in
 /// runs of points at one height, each with its corners and ends.
 fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead, first_height: f32, detail: Detail) {
-    let c = feature_color(Some(Feature::Custom));
+    let c = FILE_BEAD_COLOR;
     let half = (bead.width_mm * 0.5).max(0.05);
     if detail == Detail::Lines {
         for w in bead.points.windows(2) {
