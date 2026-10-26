@@ -68,6 +68,9 @@ pub struct PrinterStatus {
     pub bed: Heater,
     /// The printer's own message, if any.
     pub message: String,
+    /// Whether the printer's timelapse takes frames (Moonraker's timelapse plugin); None without
+    /// the plugin or before the first answer.
+    pub timelapse: Option<bool>,
 }
 
 /// A camera the printer offers (Moonraker's webcam list).
@@ -109,6 +112,10 @@ pub trait PrinterHost: Send + Sync {
     fn upload(&self, name: &str, gcode: Vec<u8>, start: bool) -> Result<u64, String>;
     /// Ask the printer to cancel the running print.
     fn cancel_print(&self) -> Result<u64, String>;
+    /// Turn the printer's timelapse on or off at once, during a print too; a job to follow.
+    fn set_timelapse(&self, _enabled: bool) -> Result<u64, String> {
+        Err("this printer has no timelapse setting".into())
+    }
     /// Where a job stands; None for an id this host never gave out.
     fn job(&self, id: u64) -> Option<JobState>;
     /// The latest status, without waiting on the network.

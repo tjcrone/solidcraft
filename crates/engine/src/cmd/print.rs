@@ -23,6 +23,7 @@ const CANCEL: &str = "print.cancel";
 const PAUSE: &str = "print.pause";
 const RESUME: &str = "print.resume";
 const HEAT: &str = "print.heat";
+const TIMELAPSE: &str = "print.timelapse";
 const WEBCAMS: &str = "print.webcams";
 const SETTINGS_GET: &str = "print.settings.get";
 const SETTINGS_SET: &str = "print.settings.set";
@@ -54,7 +55,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         "job: id from print.upload or print.cancel → job, state: queued | running (sent, total) | done (message, started) | failed (message)",
     ),
     CommandSpec::new(STATUS, "Printer Status", status).noundo().doc_only().icon("inspect").params(
-        "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message. Never waits on the network: the host's latest answer",
+        "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message, timelapse (bool; null without the printer's timelapse plugin). Never waits on the network: the host's latest answer",
     ),
     CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("DEVICE", "PRINT").icon("stop").params(
         "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
@@ -67,6 +68,9 @@ pub static COMMANDS: &[CommandSpec] = &[
     ),
     CommandSpec::new(HEAT, "Set Temperatures", heat).noundo().doc_only().icon("settings").params(
         "nozzle?: °C (0 turns the heater off, at most 350); bed?: °C (at most 150); at least one → jobs: [ids]. Sends M104 and M140 to the printer; print.job reports each answer",
+    ),
+    CommandSpec::new(TIMELAPSE, "Printer Timelapse", timelapse).noundo().doc_only().icon("camera").params(
+        "enabled: bool → job. Turns the printer's timelapse (Moonraker's timelapse plugin) on or off at once, during a print too; print.status reports it as timelapse; print.job reports the answer",
     ),
     CommandSpec::new(WEBCAMS, "Printer Cameras", webcams).noundo().doc_only().icon("list").params(
         "No parameters → webcams: [{name, stream_url, snapshot_url, enabled, rotation, flip_horizontal, flip_vertical}], as the printer lists them",
@@ -230,6 +234,12 @@ fn heat(s: &mut Session, p: &Value) -> Result<Value> {
         jobs.push(host.script(&format!("M140 S{t:.0}")).map_err(|e| EngineError::Other(format!("{HEAT}: {e}")))?);
     }
     Ok(json!({"jobs": jobs}))
+}
+
+fn timelapse(s: &mut Session, p: &Value) -> Result<Value> {
+    let enabled = bool_(p, "enabled").ok_or_else(|| bad(TIMELAPSE, "give `enabled`: true or false"))?;
+    let job = host(s, TIMELAPSE)?.set_timelapse(enabled).map_err(|e| EngineError::Other(format!("{TIMELAPSE}: {e}")))?;
+    Ok(json!({"job": job}))
 }
 
 fn webcams(s: &mut Session, _p: &Value) -> Result<Value> {

@@ -106,6 +106,7 @@ pub enum JobKind {
     Pause,
     Resume,
     Heat,
+    Timelapse,
 }
 
 impl Job {
