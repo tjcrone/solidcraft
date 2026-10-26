@@ -1,5 +1,6 @@
 //! The Printer tab of the Print workspace: the camera stream fills the canvas, the panel shows
-//! what the printer is doing with its temperatures and the pause, resume and cancel buttons.
+//! what the printer is doing with its temperatures, its timelapse switch and the pause, resume and
+//! cancel buttons.
 //! Everything that changes the printer goes through a `print.*` command; the frames of the
 //! camera come straight from the installed printer host, which reads the stream off-thread.
 
@@ -215,6 +216,17 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     }
     heater_row(app, ui, "print.extruder", nozzle, true);
     heater_row(app, ui, "print.bed", bed, false);
+    // Only a printer with the timelapse plugin has the switch.
+    if let Some(on) = status["timelapse"].as_bool() {
+        let mut wanted = on;
+        let label = app.tr("printer.timelapse").to_string();
+        let tip = app.tr("printer.timelapse_tip").to_string();
+        let changed = ui.add_enabled_ui(reachable, |ui| crate::ui_kit::checkbox(ui, &label, &mut wanted).on_hover_text(tip).changed()).inner;
+        if changed {
+            let result = app.run("print.timelapse", json!({ "enabled": wanted }));
+            follow(app, result, JobKind::Timelapse);
+        }
+    }
     ui.separator();
     let busy = matches!(state.as_str(), "printing" | "paused");
     ui.horizontal(|ui| {

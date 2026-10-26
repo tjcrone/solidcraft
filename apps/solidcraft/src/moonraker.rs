@@ -1,6 +1,6 @@
 //! The printer host for a Moonraker printer (Klipper): uploads to `/server/files/upload`, the
 //! print state and temperatures from `/printer/objects/query`, cancel through
-//! `/printer/print/cancel`. Every request runs on its own thread with a timeout, so the engine
+//! `/printer/print/cancel`, the timelapse plugin's switch through `/machine/timelapse/settings`. Every request runs on its own thread with a timeout, so the engine
 //! and the window never wait on the printer; a status thread polls every two seconds and keeps
 //! the last answer, with how old it is, for a printer that goes quiet (a Wi-Fi dongle asleep,
 //! a reboot) and comes back. Nothing is ever sent twice on its own: an upload that gets no answer
@@ -173,6 +173,42 @@ impl Shared {
             .collect())
     }
 
+    /// Whether the timelapse plugin takes frames; None when the printer has no such plugin.
+    fn fetch_timelapse(&self) -> Result<Option<bool>, String> {
+        let url = format!("{}/machine/timelapse/settings", self.url);
+        let mut r = agent(POLL_TIMEOUT).get(&url).call().map_err(|e| e.to_string())?;
+        let (status, text) = read_answer(&mut r)?;
+        if status == 404 {
+            return Ok(None);
+        }
+        if !(200..300).contains(&status) {
+            return Err(format!("HTTP {status}: {}", short(&text)));
+        }
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        Ok(v["result"]["enabled"].as_bool())
+    }
+
+    /// Turn the timelapse on or off. The plugin passes the change on to Klipper's macro, which
+    /// waits in Klipper's queue like a script.
+    fn send_timelapse(&self, enabled: bool) -> Result<(), String> {
+        let url = format!("{}/machine/timelapse/settings?enabled={enabled}", self.url);
+        let mut response = agent(QUEUED_TIMEOUT).post(&url).send(&[][..]).map_err(|e| format!("no answer from the printer ({e})"))?;
+        let (status, text) = read_answer(&mut response)?;
+        if status == 404 {
+            return Err("the printer has no timelapse plugin".into());
+        }
+        if !(200..300).contains(&status) {
+            return Err(format!("the printer refused the timelapse change: HTTP {status} {}", short(&text)));
+        }
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+        let now = v["result"]["enabled"].as_bool();
+        if now != Some(enabled) {
+            return Err(format!("the printer kept its timelapse {}", if now == Some(true) { "on" } else { "off" }));
+        }
+        lock(&self.snapshot).status.timelapse = now;
+        Ok(())
+    }
+
     /// One status request; its outcome lands in the snapshot either way.
     fn poll(&self) {
         let n = self.polls.fetch_add(1, Ordering::SeqCst);
@@ -193,6 +229,8 @@ impl Shared {
             }
             serde_json::from_str::<serde_json::Value>(&text).map_err(|e| e.to_string())
         });
+        // Asked only of a printer that answered; a failure keeps the last answer.
+        let timelapse = if result.is_ok() { self.fetch_timelapse().ok() } else { None };
         let mut snap = lock(&self.snapshot);
         match result {
             Ok(v) => {
@@ -209,6 +247,9 @@ impl Shared {
                 s.progress = num(&st["display_status"]["progress"]).clamp(0.0, 1.0);
                 s.extruder = Heater { temperature: num(&st["extruder"]["temperature"]), target: num(&st["extruder"]["target"]) };
                 s.bed = Heater { temperature: num(&st["heater_bed"]["temperature"]), target: num(&st["heater_bed"]["target"]) };
+                if let Some(timelapse) = timelapse {
+                    s.timelapse = timelapse;
+                }
                 snap.last_ok = Some(Instant::now());
             }
             Err(e) => {
@@ -307,6 +348,23 @@ impl PrinterHost for Moonraker {
                 shared.set_job(id, JobState::Running { sent: 0, total: 0 });
                 let state = match shared.send_cancel() {
                     Ok(()) => JobState::Done { message: "cancel sent to the printer".into(), started: false },
+                    Err(message) => JobState::Failed { message },
+                };
+                shared.set_job(id, state);
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    fn set_timelapse(&self, enabled: bool) -> Result<u64, String> {
+        let id = self.shared.new_job();
+        let shared = self.shared.clone();
+        std::thread::Builder::new()
+            .name("moonraker-timelapse".into())
+            .spawn(move || {
+                shared.set_job(id, JobState::Running { sent: 0, total: 0 });
+                let state = match shared.send_timelapse(enabled) {
+                    Ok(()) => JobState::Done { message: format!("timelapse {}", if enabled { "on" } else { "off" }), started: false },
                     Err(message) => JobState::Failed { message },
                 };
                 shared.set_job(id, state);
