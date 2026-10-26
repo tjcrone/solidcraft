@@ -13,6 +13,7 @@ struct Fake {
     refuse: Mutex<bool>,
     scripts: Mutex<Vec<String>>,
     watching: Mutex<Option<String>>,
+    timelapse: Mutex<Vec<bool>>,
 }
 
 impl PrinterHost for Fake {
@@ -32,6 +33,13 @@ impl PrinterHost for Fake {
         *self.cancels.lock().unwrap() += 1;
         let mut jobs = self.jobs.lock().unwrap();
         jobs.push(JobState::Done { message: "cancelled".into(), started: false });
+        Ok(jobs.len() as u64)
+    }
+    fn set_timelapse(&self, enabled: bool) -> std::result::Result<u64, String> {
+        self.timelapse.lock().unwrap().push(enabled);
+        self.status.lock().unwrap().timelapse = Some(enabled);
+        let mut jobs = self.jobs.lock().unwrap();
+        jobs.push(JobState::Done { message: "timelapse".into(), started: false });
         Ok(jobs.len() as u64)
     }
     fn job(&self, id: u64) -> Option<JobState> {
@@ -145,6 +153,7 @@ fn status_and_cancel_pass_through_the_host() {
         extruder: Heater { temperature: 279.5, target: 280.0 },
         bed: Heater { temperature: 80.0, target: 80.0 },
         message: String::new(),
+        timelapse: Some(true),
     };
     let st = run(&mut s, "print.status", json!({}));
     assert_eq!(st["installed"], true);
@@ -179,7 +188,15 @@ fn temperatures_pauses_and_cameras_go_through_scripts_and_the_list() {
     let w = run(&mut s, "print.webcams", json!({}));
     assert_eq!(w["webcams"][0]["name"], "Camera");
     assert_eq!(w["webcams"][0]["stream_url"], "http://fake/webcam/?action=stream");
+    let r = run(&mut s, "print.timelapse", json!({"enabled": false}));
+    assert!(r["job"].as_u64().is_some(), "{r}");
+    assert_eq!(run(&mut s, "print.status", json!({}))["timelapse"], false);
+    for bad in [json!({}), json!({"enabled": "no"}), json!({"enabled": 0})] {
+        assert!(s.execute("print.timelapse", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(host.timelapse.lock().unwrap().clone(), vec![false], "a refused request sends nothing");
     let mut bare = Session::default();
+    assert!(bare.execute("print.timelapse", &json!({"enabled": true})).is_err());
     assert!(bare.execute("print.heat", &json!({"bed": 60})).is_err());
     assert!(bare.execute("print.webcams", &json!({})).is_err());
 }

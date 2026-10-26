@@ -1,0 +1,17 @@
+{
+  "en": {
+    "cmd.print.timelapse": "Printer Timelapse",
+    "printer.timelapse": "Timelapse",
+    "printer.timelapse_tip": "The printer takes a camera frame at every layer. This is the printer's own setting: a change applies at once, to every print."
+  },
+  "ja": {
+    "cmd.print.timelapse": "プリンターのタイムラプス",
+    "printer.timelapse": "タイムラプス",
+    "printer.timelapse_tip": "プリンターが各レイヤーでカメラの画像を撮ります。プリンター自体の設定で、変更はすぐにすべての印刷に適用されます。"
+  },
+  "zh": {
+    "cmd.print.timelapse": "打印机延时摄影",
+    "printer.timelapse": "延时摄影",
+    "printer.timelapse_tip": "打印机在每一层拍摄一张相机画面。这是打印机自身的设置：更改立即生效，适用于所有打印。"
+  }
+}
