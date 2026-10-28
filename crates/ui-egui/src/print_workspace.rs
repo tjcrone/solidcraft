@@ -13,7 +13,7 @@ use solidcraft_engine::held_slice::HeldSlice;
 use solidcraft_engine::manufacture::{Feature, Layer, Toolpaths};
 use solidcraft_engine::printer_host::PrinterHost;
 
-use crate::gpu::{Frame, GpuScene, SceneSlot, ViewportCallback};
+use crate::gpu::{Frame, GpuScene, PaletteIndex, SceneSlot, ViewportCallback};
 use crate::ui_kit::{Container, Edge, Surface};
 use crate::{SolveApp, theme::Tokens};
 
@@ -899,7 +899,7 @@ fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
 pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let rect = ui.max_rect();
     app.viewport.rect = Some(rect);
-    crate::viewport::refresh_layout(app, ui.ctx().pixels_per_point());
+    crate::viewport::refresh_layout(app, ui.ctx());
     let response = ui.interact(rect, ui.id().with("print_preview"), Sense::click_and_drag());
     load_settings(app);
     bed_info(app);
@@ -1121,7 +1121,7 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
 fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
     let Ok(scene) = solidcraft_engine::product_scene::extract(&app.session) else { return };
     let t = Tokens::get();
-    let c = [t.text_dim.r(), t.text_dim.g(), t.text_dim.b(), SHELL_ALPHA];
+    let c = gpu.color([t.text_dim.r(), t.text_dim.g(), t.text_dim.b(), SHELL_ALPHA]);
     // Turned as the slice turned it: about the footprint's centre, before the offset.
     let about = scene.bounds.center().to_f32();
     let (sin, cos) = (app.session.doc.print.placement.rotation as f32).to_radians().sin_cos();
@@ -1163,7 +1163,7 @@ const SHELL_INSET: f32 = 0.1;
 fn prepared_scene(app: &SolveApp) -> Result<GpuScene, String> {
     let scene = solidcraft_engine::product_scene::extract(&app.session).map_err(|e| e.to_string())?;
     let mut gpu = GpuScene::default();
-    let grey = [0xb4, 0xba, 0xc4, 255];
+    let grey = gpu.color([0xb4, 0xba, 0xc4, 255]);
     let mut offset = prepare_offset(app).unwrap_or([0.0; 3]);
     // While the part is dragged it moves with the pointer; the placement follows at the end.
     let shift = drag_shift(app);
@@ -1244,8 +1244,9 @@ fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<GpuScene, String> {
         if travels {
             // A little above the beads, so the line never fights with the top faces.
             let z = layer.z + TRAVEL_LIFT;
+            let travel = gpu.color(TRAVEL_COLOR);
             for (a, b) in layer.travels() {
-                gpu.line([a[0], a[1], z], [b[0], b[1], z], TRAVEL_COLOR, 1.0, false);
+                gpu.line([a[0], a[1], z], [b[0], b[1], z], travel, 1.0, false);
             }
         }
     }
@@ -1402,7 +1403,7 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
     let top = layer.z;
     let bottom = (layer.z - layer.height).max(0.0);
     for path in &layer.paths {
-        let c = feature_color(path.feature);
+        let c = gpu.color(feature_color(path.feature));
         let half = (path.width_mm * 0.5).max(0.05);
         if detail == Detail::Lines {
             for w in path.points.windows(2) {
@@ -1419,7 +1420,7 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
 
 /// One path of bead: its straight runs, a fan on the outside of each corner, and either caps on
 /// its two ends or, for a closed loop, a fan at its seam.
-fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: [u8; 4]) {
+fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: PaletteIndex) {
     let closed = pts.len() > 2 && pts.first() == pts.last();
     let mut previous: Option<[f32; 2]> = None;
     for w in pts.windows(2) {
@@ -1447,7 +1448,7 @@ fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: [u8; 4]) {
 /// A bead the start or end template lays (the purge line): drawn as the layers' beads are, in
 /// runs of points at one height, each with its corners and ends.
 fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead, first_height: f32, detail: Detail) {
-    let c = FILE_BEAD_COLOR;
+    let c = gpu.color(FILE_BEAD_COLOR);
     let half = (bead.width_mm * 0.5).max(0.05);
     if detail == Detail::Lines {
         for w in bead.points.windows(2) {
@@ -1487,7 +1488,7 @@ fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead
 
 /// One straight piece of bead from `a` to `b` with left normal `n`.
 /// A straight run of bead from `a` to `b`: one face per ring edge.
-fn bead_segment(gpu: &mut GpuScene, prof: &Profile, a: [f32; 2], b: [f32; 2], n: [f32; 2], c: [u8; 4]) {
+fn bead_segment(gpu: &mut GpuScene, prof: &Profile, a: [f32; 2], b: [f32; 2], n: [f32; 2], c: PaletteIndex) {
     for k in 0..prof.edges() {
         quad(gpu, prof.at(a, n, k), prof.at(b, n, k), prof.at(b, n, k + 1), prof.at(a, n, k + 1), prof.face_normal(n, k), c);
     }
@@ -1495,7 +1496,7 @@ fn bead_segment(gpu: &mut GpuScene, prof: &Profile, a: [f32; 2], b: [f32; 2], n:
 
 /// The outside of a corner at `v`, between a step going `d0` and one going `d1`: the ring's
 /// faces on that side swept round the corner, with wedges on the top and the bottom.
-fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], c: [u8; 4]) {
+fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], c: PaletteIndex) {
     let cross = d0[0] * d1[1] - d0[1] * d1[0];
     let dot = (d0[0] * d1[0] + d0[1] * d1[1]).clamp(-1.0, 1.0);
     let angle = dot.acos();
@@ -1535,7 +1536,7 @@ fn join_steps(angle: f32) -> usize {
 
 /// The end of an open bead at `p`: a fan over the ring, facing `facing` times the path's
 /// direction `d`.
-fn bead_cap(gpu: &mut GpuScene, prof: &Profile, p: [f32; 2], d: [f32; 2], n: [f32; 2], facing: f32, c: [u8; 4]) {
+fn bead_cap(gpu: &mut GpuScene, prof: &Profile, p: [f32; 2], d: [f32; 2], n: [f32; 2], facing: f32, c: PaletteIndex) {
     if prof.ring.len() < 3 {
         return;
     }
@@ -1546,14 +1547,14 @@ fn bead_cap(gpu: &mut GpuScene, prof: &Profile, p: [f32; 2], d: [f32; 2], n: [f3
 }
 
 /// Two triangles for the quad `p0 p1 p2 p3`, wound so `n` is their outward normal.
-fn quad(gpu: &mut GpuScene, p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], n: [f32; 3], c: [u8; 4]) {
+fn quad(gpu: &mut GpuScene, p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], n: [f32; 3], c: PaletteIndex) {
     tri(gpu, p0, p1, p2, n, c);
     tri(gpu, p0, p2, p3, n, c);
 }
 
 /// One triangle, wound counter-clockwise seen from the side `n` points to whatever order the
 /// corners came in.
-fn tri(gpu: &mut GpuScene, a: [f32; 3], b: [f32; 3], c: [f32; 3], n: [f32; 3], col: [u8; 4]) {
+fn tri(gpu: &mut GpuScene, a: [f32; 3], b: [f32; 3], c: [f32; 3], n: [f32; 3], col: PaletteIndex) {
     let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
     let cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
     let (b, c) = if cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2] < 0.0 { (c, b) } else { (b, c) };
@@ -1570,7 +1571,7 @@ fn bed(gpu: &mut GpuScene, b: [f32; 4]) {
     }
     let t = Tokens::get();
     let line = |c: Color32| [c.r(), c.g(), c.b(), 255];
-    let (minor, major) = (line(t.grid), line(t.grid_major));
+    let (minor, major) = (gpu.color(line(t.grid)), gpu.color(line(t.grid_major)));
     let mut x = (x0 / 10.0).ceil() * 10.0;
     while x <= x1 {
         gpu.under_line([x, y0, 0.0], [x, y1, 0.0], minor, 1.0);
