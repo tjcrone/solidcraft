@@ -64,6 +64,8 @@ pub struct State {
     drag: Option<Drag>,
     /// Whether the held slice answers the panel's request, and what that was checked for.
     current: Option<(SliceKey, bool)>,
+    /// The bead detail the preview's toolpaths were last drawn at.
+    detail: Option<Detail>,
 }
 
 /// What a slice request depends on: the files and when they changed, the design, the slice.
@@ -207,6 +209,7 @@ impl Default for State {
             bed: None,
             drag: None,
             current: None,
+            detail: None,
         }
     }
 }
@@ -873,6 +876,11 @@ fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
         ui.label(format!("{} {} / {n}", app.tr("print.layer"), shown_layer(app, n)));
         ui.small(format!("z {:.2} mm · {:.2} mm · {} · {} segments", layer.z, layer.height, hms(f64::from(layer.time_s)), layer.segments()));
     }
+    // A print past the preview's budget is drawn simpler; say so rather than let it look wrong.
+    if app.print_workspace.detail == Some(Detail::Lines) {
+        let text = app.tr("print.detail_lines").to_string();
+        ui.add(egui::Label::new(egui::RichText::new(text).small().color(Tokens::get().warning)).wrap());
+    }
     let travels_label = app.tr("print.show_travels").to_string();
     crate::ui_kit::checkbox(ui, &travels_label, &mut app.print_workspace.show_travels);
     ui.label(app.tr("print.features"));
@@ -1102,7 +1110,8 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
     }
     let scene = match (source, app.session.print_slice().cloned()) {
         (Source::Toolpaths { .. }, Some(held)) => {
-            let mut scene = toolpath_scene(&held, app.print_workspace.show_travels)?;
+            let (mut scene, detail) = toolpath_scene(&held, app.print_workspace.show_travels)?;
+            app.print_workspace.detail = Some(detail);
             shell(app, &mut scene, held.sliced.offset);
             scene
         }
@@ -1198,50 +1207,63 @@ fn prepared_scene(app: &SolveApp) -> Result<GpuScene, String> {
     Ok(gpu)
 }
 
-/// Bytes one segment costs at each detail, joins and caps included (about one join per segment).
-fn bytes_per_segment(detail: Detail) -> usize {
-    match detail {
-        Detail::Beads => (BEAD_VERTS + JOIN_VERTS) * crate::gpu::TRI_SIZE,
-        Detail::Half => (HALF_VERTS + HALF_JOIN_VERTS) * crate::gpu::TRI_SIZE,
-        Detail::Flat => (FLAT_VERTS + FLAT_JOIN_VERTS) * crate::gpu::TRI_SIZE,
-        Detail::Lines => LINE_BYTES,
+/// What the toolpaths cost: as beads, one placement per straight run, joined corner and open
+/// end ([`Instancer`]); as lines, one line per straight run.
+struct Cost {
+    segments: usize,
+    /// Corners that get a join ([`join_wanted`]).
+    joins: usize,
+    /// Open path ends.
+    caps: usize,
+}
+
+impl Cost {
+    fn of(paths: &Toolpaths) -> Cost {
+        let mut cost = Cost { segments: 0, joins: 0, caps: 0 };
+        for path in paths.layers.iter().flat_map(|l| &l.paths) {
+            let half = (path.width_mm * 0.5).max(0.05);
+            let steps: Vec<[f32; 2]> = path.points.windows(2).filter_map(|w| direction(w[0], w[1]).map(|(d, _)| d)).collect();
+            cost.segments += steps.len();
+            let closed = path.points.len() > 2 && path.points.first() == path.points.last();
+            let seam = if closed { steps.last().copied().zip(steps.first().copied()) } else { None };
+            cost.joins += steps.windows(2).map(|w| (w[0], w[1])).chain(seam).filter(|(d0, d1)| join_wanted(half, turn(*d0, *d1))).count();
+            if !closed && !steps.is_empty() {
+                cost.caps += 2;
+            }
+        }
+        cost
+    }
+
+    fn bytes(&self, detail: Detail) -> usize {
+        match detail {
+            Detail::Beads => (self.segments + self.joins + self.caps).saturating_mul(crate::gpu::INSTANCE_SIZE),
+            Detail::Lines => self.segments.saturating_mul(LINE_BYTES),
+        }
     }
 }
 
-/// Vertices one end cap costs at each detail.
-fn cap_verts(detail: Detail) -> usize {
-    match detail {
-        Detail::Beads => CAP_VERTS,
-        Detail::Half => HALF_CAP_VERTS,
-        Detail::Flat | Detail::Lines => 0,
-    }
-}
-
-/// The toolpaths as beads: each segment a bead with a flat top, sides that slope out to the
-/// full width at mid-height and back in at the layer below, fans of the same profile on the
-/// outside of every corner so the bead turns without a notch, and caps on open ends. Past the
-/// budget the lower slopes go, then the slopes, then the beads become lines.
-fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<GpuScene, String> {
+/// The toolpaths as beads: each segment a bead with a flat top and half-round sides, fans of
+/// the same profile on the outside of every corner so the bead turns without a notch, and caps
+/// on open ends, all placements of shared pieces ([`Instancer`]). Past the budget the beads
+/// become lines. Returns the scene and the detail it was drawn at.
+fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<(GpuScene, Detail), String> {
     let paths: &Toolpaths = &held.sliced.toolpaths;
-    let segments = paths.segments();
     let travel_count: usize = paths.layers.iter().map(|l| l.paths.len().saturating_sub(1)).sum();
     let travel_bytes = if travels { travel_count * LINE_BYTES } else { 0 };
-    let path_count: usize = paths.layers.iter().map(|l| l.paths.len()).sum();
-    let detail = [Detail::Beads, Detail::Half, Detail::Flat, Detail::Lines]
+    let cost = Cost::of(paths);
+    let detail = [Detail::Beads, Detail::Lines]
         .into_iter()
-        .find(|d| {
-            let caps = path_count.saturating_mul(2 * cap_verts(*d) * crate::gpu::TRI_SIZE);
-            segments.saturating_mul(bytes_per_segment(*d)).saturating_add(caps).saturating_add(travel_bytes) <= MAX_GEOMETRY_BYTES
-        })
-        .ok_or_else(|| format!("{segments} segments are past the preview's geometry budget"))?;
+        .find(|d| cost.bytes(*d).saturating_add(travel_bytes) <= MAX_GEOMETRY_BYTES)
+        .ok_or_else(|| format!("{} segments are past the preview's geometry budget", cost.segments))?;
     let mut gpu = GpuScene::default();
+    let mut inst = Instancer::default();
     bed(&mut gpu, held.sliced.bed);
     let first_height = paths.layers.first().map_or(0.2, |l| l.height);
     for bead in &paths.file_beads {
-        file_bead(&mut gpu, bead, first_height, detail);
+        file_bead(&mut gpu, &mut inst, bead, first_height, detail);
     }
     for layer in &paths.layers {
-        layer_beads(&mut gpu, layer, detail);
+        layer_beads(&mut gpu, &mut inst, layer, detail);
         if travels {
             // A little above the beads, so the line never fights with the top faces.
             let z = layer.z + TRAVEL_LIFT;
@@ -1251,46 +1273,188 @@ fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<GpuScene, String> {
             }
         }
     }
-    Ok(gpu)
+    gpu.instanced.extend(inst.meshes.into_values());
+    Ok((gpu, detail))
+}
+
+/// The beads as placements of a few shared pieces, each made once per profile in its own frame
+/// (along +x, sideways +y, its top at z = 0) and laid by its placement: a straight run of unit
+/// length stretched along the path, a corner's fan for its angle in whole degrees, an end cap.
+/// A placement turns a piece to the path's direction and moves it to its point and height; the
+/// stretch only lengthens a straight run, whose faces all run along it, so no normal changes.
+#[derive(Default)]
+struct Instancer {
+    meshes: std::collections::HashMap<u64, crate::gpu::InstancedMesh>,
+}
+
+/// Which shared piece of a profile.
+#[derive(Hash)]
+enum Piece {
+    Run,
+    /// A corner turning this many whole degrees, to the left or not.
+    Join { degrees: u16, left: bool },
+    /// An end facing along the path (`true`, the path's last point) or back along it.
+    Cap { forward: bool },
+}
+
+impl Instancer {
+    fn place(&mut self, prof: &Profile, piece: Piece, rows: [[f32; 4]; 3], c: PaletteIndex) {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        prof.key().hash(&mut h);
+        piece.hash(&mut h);
+        let key = h.finish();
+        let mesh = self.meshes.entry(key).or_insert_with(|| crate::gpu::InstancedMesh {
+            key,
+            tris: Arc::new(shared(prof, &piece_tris(prof, &piece))),
+            instances: Vec::new(),
+            look: crate::gpu::InstanceLook::Opaque,
+            levels: Vec::new(),
+        });
+        mesh.place(rows, c);
+    }
+
+    /// A straight run from `a` to `b`.
+    fn run(&mut self, prof: &Profile, a: [f32; 2], b: [f32; 2], c: PaletteIndex) {
+        let n = [a[1] - b[1], b[0] - a[0]];
+        self.place(prof, Piece::Run, [[b[0] - a[0], unit2(n)[0], 0.0, a[0]], [b[1] - a[1], unit2(n)[1], 0.0, a[1]], [0.0, 0.0, 1.0, prof.top]], c);
+    }
+
+    /// The outside of the corner at `v` between a step going `d0` and one going `d1`.
+    fn join(&mut self, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], c: PaletteIndex) {
+        let angle = turn(d0, d1);
+        if !join_wanted(prof.half, angle) {
+            return;
+        }
+        let degrees = (angle.to_degrees().round() as u16).clamp(1, 180);
+        let left = d0[0] * d1[1] - d0[1] * d1[0] > 0.0;
+        self.place(prof, Piece::Join { degrees, left }, turned(d0, v, prof.top), c);
+    }
+
+    /// The end of an open bead at `p`, the path going `d` there; `forward` for its last point.
+    fn cap(&mut self, prof: &Profile, p: [f32; 2], d: [f32; 2], forward: bool, c: PaletteIndex) {
+        self.place(prof, Piece::Cap { forward }, turned(d, p, prof.top), c);
+    }
+}
+
+/// The rows of a placement that turns +x to `d` (and +y to its left) and moves the origin to
+/// `at`, `top` high.
+fn turned(d: [f32; 2], at: [f32; 2], top: f32) -> [[f32; 4]; 3] {
+    [[d[0], -d[1], 0.0, at[0]], [d[1], d[0], 0.0, at[1]], [0.0, 0.0, 1.0, top]]
+}
+
+/// One triangle: its corners (wound so the normal is its outward side) and its normal.
+type Tri = ([[f32; 3]; 3], [f32; 3]);
+
+/// A piece's triangles in its own frame, at the profile's height on the plate.
+fn piece_tris(prof: &Profile, piece: &Piece) -> Vec<Tri> {
+    let mut out = Vec::new();
+    match *piece {
+        Piece::Run => {
+            let n = [0.0, 1.0];
+            for k in 0..prof.edges() {
+                let (p0, p1, p2, p3) = (prof.at([0.0, 0.0], n, k), prof.at([1.0, 0.0], n, k), prof.at([1.0, 0.0], n, k + 1), prof.at([0.0, 0.0], n, k + 1));
+                quad(&mut out, [p0, p1, p2, p3], prof.face_normal(n, k));
+            }
+        }
+        Piece::Join { degrees, left } => {
+            let (s, c) = f32::from(degrees).to_radians().sin_cos();
+            join_tris(&mut out, prof, [0.0, 0.0], [1.0, 0.0], [c, if left { s } else { -s }]);
+        }
+        Piece::Cap { forward } => {
+            let facing = if forward { 1.0 } else { -1.0 };
+            let normal = [facing, 0.0, 0.0];
+            for k in 1..prof.ring.len().saturating_sub(1) {
+                let corners = [prof.at([0.0, 0.0], [0.0, 1.0], 0), prof.at([0.0, 0.0], [0.0, 1.0], k), prof.at([0.0, 0.0], [0.0, 1.0], k + 1)];
+                out.push((wound(corners, normal), normal));
+            }
+        }
+    }
+    out
+}
+
+/// The outside of a corner at `v`, between a step going `d0` and one going `d1`: the ring's
+/// faces on that side swept round the corner, with wedges on the top and the bottom.
+fn join_tris(out: &mut Vec<Tri>, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2]) {
+    let cross = d0[0] * d1[1] - d0[1] * d1[0];
+    let angle = turn(d0, d1);
+    // A left turn (cross > 0) leaves the gap on the right side, and the other way round.
+    let side = if cross > 0.0 { -1.0 } else { 1.0 };
+    let n0 = [-d0[1], d0[0]];
+    let steps = join_steps(angle);
+    // The side normal sweeps from n0 to n1 through the outside of the turn.
+    let sweep = if side > 0.0 { -angle } else { angle };
+    let normal_at = |t: f32| {
+        let (s, co) = (sweep * t).sin_cos();
+        [n0[0] * co - n0[1] * s, n0[0] * s + n0[1] * co]
+    };
+    let run = prof.side(side);
+    let (highest, lowest) = prof.extremes(run.clone());
+    let centre_top = [v[0], v[1], prof.top];
+    let centre_bottom = [v[0], v[1], prof.bottom];
+    for i in 0..steps {
+        let (na, nb) = (normal_at(i as f32 / steps as f32), normal_at((i + 1) as f32 / steps as f32));
+        let nm = unit2([(na[0] + nb[0]) * 0.5, (na[1] + nb[1]) * 0.5]);
+        for k in run.start..run.end.saturating_sub(1) {
+            quad(out, [prof.at(v, na, k), prof.at(v, nb, k), prof.at(v, nb, k + 1), prof.at(v, na, k + 1)], prof.face_normal(nm, k));
+        }
+        let up = [0.0, 0.0, 1.0];
+        out.push((wound([centre_top, prof.at(v, na, highest), prof.at(v, nb, highest)], up), up));
+        if prof.bottom_face {
+            let down = [0.0, 0.0, -1.0];
+            out.push((wound([centre_bottom, prof.at(v, na, lowest), prof.at(v, nb, lowest)], down), down));
+        }
+    }
+}
+
+/// Two triangles for the quad `p0 p1 p2 p3`, wound so `n` is their outward normal.
+fn quad(out: &mut Vec<Tri>, [p0, p1, p2, p3]: [[f32; 3]; 4], n: [f32; 3]) {
+    out.push((wound([p0, p1, p2], n), n));
+    out.push((wound([p0, p2, p3], n), n));
+}
+
+/// A piece's triangles as a shared mesh in its own frame: its top at z = 0.
+fn shared(prof: &Profile, tris: &[Tri]) -> crate::gpu::SharedTris {
+    let mut out = crate::gpu::SharedTris::default();
+    let mut lo = [f32::INFINITY; 3];
+    let mut hi = [f32::NEG_INFINITY; 3];
+    for (corners, n) in tris {
+        for p in corners {
+            let p = [p[0], p[1], p[2] - prof.top];
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+            let index = u32::try_from(out.vertices.len() / crate::gpu::SHARED_SIZE).unwrap_or(u32::MAX);
+            for v in p.iter().chain(n) {
+                out.vertices.extend_from_slice(&v.to_le_bytes());
+            }
+            out.indices.push(index);
+        }
+    }
+    out.bounds = [lo, hi];
+    out
 }
 
 /// How far above a layer's top its travel moves are drawn, mm.
 const TRAVEL_LIFT: f32 = 0.05;
-/// Vertices per straight segment at each detail: the ring's faces, two triangles each. A layer's
-/// bead has no face underneath (the layer below's top is there, or the bed).
-const BEAD_VERTS: usize = 6 * 9;
-const HALF_VERTS: usize = 6 * 5;
-const FLAT_VERTS: usize = 6;
-/// Vertices one join step adds: the ring's faces on the outside of the turn, and a wedge on
-/// the top to the bead's centre line.
-const JOIN_VERTS: usize = 6 * 4 + 3;
-const HALF_JOIN_VERTS: usize = 6 * 2 + 3;
-const FLAT_JOIN_VERTS: usize = 3;
-/// Vertices an end cap adds: a fan over the ring.
-const CAP_VERTS: usize = 3 * 8;
-const HALF_CAP_VERTS: usize = 3 * 4;
 /// Widest turn one join step spans; sharper corners get more steps so the fan stays round.
 const JOIN_STEP: f32 = std::f32::consts::FRAC_PI_4;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Detail {
-    /// The full profile: top, upper and lower slopes.
+    /// The full profile.
     Beads,
-    /// Top and upper slopes.
-    Half,
-    /// Top only.
-    Flat,
+    /// One line per straight run, for a print past the budget even as placements.
     Lines,
 }
 
 /// The bead's cross-section: a ring of points in (sideways, height) about the path, going
 /// round counter-clockwise seen along the path (up the right side, across the top, down the
-/// left side, across the bottom). The full ring is a stadium, flat on top and underneath with
-/// half-round sides, the shape a laid bead takes: `half` to each side, the layer tall. The
-/// lesser details keep the top and the upper arcs, then the top alone.
+/// left side, across the bottom). The ring is a stadium, flat on top and underneath with
+/// half-round sides, the shape a laid bead takes: `half` to each side, the layer tall.
 struct Profile {
     ring: Vec<[f32; 2]>,
-    closed: bool,
     /// Whether the face underneath is drawn. A layer's bead sits on the layer below (or the
     /// bed), whose top is at the same height: drawing both would put two faces at one depth,
     /// which flicker where the layer clip exposes them. The purge line on the bed keeps its.
@@ -1301,10 +1465,27 @@ struct Profile {
     left: std::ops::Range<usize>,
     top: f32,
     bottom: f32,
+    /// Half the bead's width.
+    half: f32,
 }
 
 impl Profile {
-    fn new(top: f32, bottom: f32, half: f32, detail: Detail, bottom_face: bool) -> Self {
+    /// Names the profile's shape (not its height on the plate): profiles with the same key share
+    /// their pieces. Rounded to a tenth of a micrometre, so layers of one height share them
+    /// whatever their tops' rounding.
+    fn key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        let tenth_um = |v: f32| (v * 1e4).round() as i64;
+        for [r, z] in &self.ring {
+            tenth_um(*r).hash(&mut h);
+            tenth_um(z - self.top).hash(&mut h);
+        }
+        self.bottom_face.hash(&mut h);
+        h.finish()
+    }
+
+    fn new(top: f32, bottom: f32, half: f32, bottom_face: bool) -> Self {
         let mid = f32::midpoint(top, bottom);
         let b = ((top - bottom) * 0.5).max(1e-4);
         let a = half.min(b);
@@ -1314,49 +1495,35 @@ impl Profile {
             let (sin, cos) = t.to_radians().sin_cos();
             [side * (flat + a * cos), mid + b * sin]
         };
-        match detail {
-            Detail::Beads => Self {
-                ring: vec![
-                    arc(-90.0, 1.0),
-                    arc(-45.0, 1.0),
-                    arc(0.0, 1.0),
-                    arc(45.0, 1.0),
-                    arc(90.0, 1.0),
-                    arc(90.0, -1.0),
-                    arc(45.0, -1.0),
-                    arc(0.0, -1.0),
-                    arc(-45.0, -1.0),
-                    arc(-90.0, -1.0),
-                ],
-                closed: true,
-                bottom_face,
-                right: 0..5,
-                left: 5..10,
-                top,
-                bottom,
-            },
-            Detail::Half => Self {
-                ring: vec![arc(0.0, 1.0), arc(45.0, 1.0), arc(90.0, 1.0), arc(90.0, -1.0), arc(45.0, -1.0), arc(0.0, -1.0)],
-                closed: false,
-                bottom_face: false,
-                right: 0..3,
-                left: 3..6,
-                top,
-                bottom,
-            },
-            Detail::Flat | Detail::Lines => {
-                Self { ring: vec![[half, top], [-half, top]], closed: false, bottom_face: false, right: 0..1, left: 1..2, top, bottom }
-            }
+        Self {
+            ring: vec![
+                arc(-90.0, 1.0),
+                arc(-45.0, 1.0),
+                arc(0.0, 1.0),
+                arc(45.0, 1.0),
+                arc(90.0, 1.0),
+                arc(90.0, -1.0),
+                arc(45.0, -1.0),
+                arc(0.0, -1.0),
+                arc(-45.0, -1.0),
+                arc(-90.0, -1.0),
+            ],
+            bottom_face,
+            right: 0..5,
+            left: 5..10,
+            top,
+            bottom,
+            half,
         }
     }
 
-    /// How many faces a straight segment has: the ring's edges, less the closing one underneath
+    /// How many faces a straight run has: the ring's edges, less the closing one underneath
     /// when that face is not drawn.
     fn edges(&self) -> usize {
-        if self.closed && self.bottom_face { self.ring.len() } else { self.ring.len().saturating_sub(1) }
+        if self.bottom_face { self.ring.len() } else { self.ring.len().saturating_sub(1) }
     }
 
-    /// Ring point `k` at `p`, where `n` is the unit vector to the right of the path.
+    /// Ring point `k` at `p`, where `n` is the unit vector to the path's left.
     fn at(&self, p: [f32; 2], n: [f32; 2], k: usize) -> [f32; 3] {
         let [r, z] = self.ring[k % self.ring.len()];
         [p[0] + n[0] * r, p[1] + n[1] * r, z]
@@ -1400,7 +1567,7 @@ fn direction(a: [f32; 2], b: [f32; 2]) -> Option<([f32; 2], [f32; 2])> {
     (len > 1e-6).then(|| ([dx / len, dy / len], [-dy / len, dx / len]))
 }
 
-fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
+fn layer_beads(gpu: &mut GpuScene, inst: &mut Instancer, layer: &Layer, detail: Detail) {
     let top = layer.z;
     let bottom = (layer.z - layer.height).max(0.0);
     for path in &layer.paths {
@@ -1414,23 +1581,22 @@ fn layer_beads(gpu: &mut GpuScene, layer: &Layer, detail: Detail) {
             }
             continue;
         }
-        let prof = Profile::new(top, bottom, half, detail, false);
-        bead_path(gpu, &prof, &path.points, c);
+        bead_path(inst, &Profile::new(top, bottom, half, false), &path.points, c);
     }
 }
 
 /// One path of bead: its straight runs, a fan on the outside of each corner, and either caps on
 /// its two ends or, for a closed loop, a fan at its seam.
-fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: PaletteIndex) {
+fn bead_path(inst: &mut Instancer, prof: &Profile, pts: &[[f32; 2]], c: PaletteIndex) {
     let closed = pts.len() > 2 && pts.first() == pts.last();
     let mut previous: Option<[f32; 2]> = None;
     for w in pts.windows(2) {
         let (a, b) = (w[0], w[1]);
-        let Some((d, n)) = direction(a, b) else { continue };
-        bead_segment(gpu, prof, a, b, n, c);
+        let Some((d, _)) = direction(a, b) else { continue };
+        inst.run(prof, a, b, c);
         match previous {
-            Some(d0) => bead_join(gpu, prof, a, d0, d, c),
-            None if !closed => bead_cap(gpu, prof, a, d, n, -1.0, c),
+            Some(d0) => inst.join(prof, a, d0, d, c),
+            None if !closed => inst.cap(prof, a, d, false, c),
             None => {}
         }
         previous = Some(d);
@@ -1439,16 +1605,16 @@ fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: PaletteInd
     if closed {
         // The loop's seam: the join between its last and first steps.
         if let Some(((d_first, _), last)) = pts.windows(2).find_map(|w| direction(w[0], w[1])).zip(pts.last()) {
-            bead_join(gpu, prof, *last, d_last, d_first, c);
+            inst.join(prof, *last, d_last, d_first, c);
         }
     } else if let Some(last) = pts.last() {
-        bead_cap(gpu, prof, *last, d_last, [-d_last[1], d_last[0]], 1.0, c);
+        inst.cap(prof, *last, d_last, true, c);
     }
 }
 
 /// A bead the start or end template lays (the purge line): drawn as the layers' beads are, in
 /// runs of points at one height, each with its corners and ends.
-fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::print::FileBead, first_height: f32, detail: Detail) {
+fn file_bead(gpu: &mut GpuScene, inst: &mut Instancer, bead: &solidcraft_engine::print::FileBead, first_height: f32, detail: Detail) {
     let c = gpu.color(FILE_BEAD_COLOR);
     let half = (bead.width_mm * 0.5).max(0.05);
     if detail == Detail::Lines {
@@ -1461,10 +1627,10 @@ fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::print::FileBead, firs
     }
     let mut run: Vec<[f32; 2]> = Vec::new();
     let mut run_z: Option<f32> = None;
-    let flush = |gpu: &mut GpuScene, run: &mut Vec<[f32; 2]>, z: f32| {
+    let flush = |inst: &mut Instancer, run: &mut Vec<[f32; 2]>, z: f32| {
         if run.len() >= 2 {
             let bottom = (z - z.min(first_height).max(0.05)).max(0.0);
-            bead_path(gpu, &Profile::new(z, bottom, half, detail, true), run, c);
+            bead_path(inst, &Profile::new(z, bottom, half, true), run, c);
         }
         run.clear();
     };
@@ -1472,7 +1638,7 @@ fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::print::FileBead, firs
         match run_z {
             Some(z) if (p[2] - z).abs() <= 1e-3 => run.push([p[0], p[1]]),
             Some(z) => {
-                flush(gpu, &mut run, z);
+                flush(inst, &mut run, z);
                 run.push([p[0], p[1]]);
                 run_z = Some(p[2]);
             }
@@ -1483,85 +1649,34 @@ fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::print::FileBead, firs
         }
     }
     if let Some(z) = run_z {
-        flush(gpu, &mut run, z);
+        flush(inst, &mut run, z);
     }
 }
 
-/// One straight piece of bead from `a` to `b` with left normal `n`.
-/// A straight run of bead from `a` to `b`: one face per ring edge.
-fn bead_segment(gpu: &mut GpuScene, prof: &Profile, a: [f32; 2], b: [f32; 2], n: [f32; 2], c: PaletteIndex) {
-    for k in 0..prof.edges() {
-        quad(gpu, prof.at(a, n, k), prof.at(b, n, k), prof.at(b, n, k + 1), prof.at(a, n, k + 1), prof.face_normal(n, k), c);
-    }
+/// The angle between two unit directions, radians.
+fn turn(d0: [f32; 2], d1: [f32; 2]) -> f32 {
+    (d0[0] * d1[0] + d0[1] * d1[1]).clamp(-1.0, 1.0).acos()
 }
 
-/// The outside of a corner at `v`, between a step going `d0` and one going `d1`: the ring's
-/// faces on that side swept round the corner, with wedges on the top and the bottom.
-fn bead_join(gpu: &mut GpuScene, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], c: PaletteIndex) {
-    let cross = d0[0] * d1[1] - d0[1] * d1[0];
-    let dot = (d0[0] * d1[0] + d0[1] * d1[1]).clamp(-1.0, 1.0);
-    let angle = dot.acos();
-    if !angle.is_finite() || angle < 1e-3 {
-        return;
-    }
-    // A left turn (cross > 0) leaves the gap on the right side, and the other way round.
-    let side = if cross > 0.0 { -1.0 } else { 1.0 };
-    let n0 = [-d0[1], d0[0]];
-    let steps = join_steps(angle);
-    // The side normal sweeps from n0 to n1 through the outside of the turn.
-    let sweep = if side > 0.0 { -angle } else { angle };
-    let normal_at = |t: f32| {
-        let (s, co) = (sweep * t).sin_cos();
-        [n0[0] * co - n0[1] * s, n0[0] * s + n0[1] * co]
-    };
-    let run = prof.side(side);
-    let (highest, lowest) = prof.extremes(run.clone());
-    let centre_top = [v[0], v[1], prof.top];
-    let centre_bottom = [v[0], v[1], prof.bottom];
-    for i in 0..steps {
-        let (na, nb) = (normal_at(i as f32 / steps as f32), normal_at((i + 1) as f32 / steps as f32));
-        let nm = unit2([(na[0] + nb[0]) * 0.5, (na[1] + nb[1]) * 0.5]);
-        for k in run.start..run.end.saturating_sub(1) {
-            quad(gpu, prof.at(v, na, k), prof.at(v, nb, k), prof.at(v, nb, k + 1), prof.at(v, na, k + 1), prof.face_normal(nm, k), c);
-        }
-        tri(gpu, centre_top, prof.at(v, na, highest), prof.at(v, nb, highest), [0.0, 0.0, 1.0], c);
-        if prof.closed && prof.bottom_face {
-            tri(gpu, centre_bottom, prof.at(v, na, lowest), prof.at(v, nb, lowest), [0.0, 0.0, -1.0], c);
-        }
-    }
+/// Whether a corner turning `angle` gets a join: the gap it fills on the outside of the turn is
+/// about `half × angle` wide, and under [`JOIN_GAP`] nobody sees it (a fine chord of a curve
+/// turns a degree or two, half of a curved part's corners).
+fn join_wanted(half: f32, angle: f32) -> bool {
+    angle.is_finite() && half * angle >= JOIN_GAP
 }
+
+/// The widest gap left open on the outside of a corner, mm.
+const JOIN_GAP: f32 = 0.01;
 
 fn join_steps(angle: f32) -> usize {
     ((angle / JOIN_STEP - 1e-4).ceil() as usize).clamp(1, 8)
 }
 
-/// The end of an open bead at `p`: a fan over the ring, facing `facing` times the path's
-/// direction `d`.
-fn bead_cap(gpu: &mut GpuScene, prof: &Profile, p: [f32; 2], d: [f32; 2], n: [f32; 2], facing: f32, c: PaletteIndex) {
-    if prof.ring.len() < 3 {
-        return;
-    }
-    let normal = [d[0] * facing, d[1] * facing, 0.0];
-    for k in 1..prof.ring.len() - 1 {
-        tri(gpu, prof.at(p, n, 0), prof.at(p, n, k), prof.at(p, n, k + 1), normal, c);
-    }
-}
-
-/// Two triangles for the quad `p0 p1 p2 p3`, wound so `n` is their outward normal.
-fn quad(gpu: &mut GpuScene, p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], n: [f32; 3], c: PaletteIndex) {
-    tri(gpu, p0, p1, p2, n, c);
-    tri(gpu, p0, p2, p3, n, c);
-}
-
-/// One triangle, wound counter-clockwise seen from the side `n` points to whatever order the
-/// corners came in.
-fn tri(gpu: &mut GpuScene, a: [f32; 3], b: [f32; 3], c: [f32; 3], n: [f32; 3], col: PaletteIndex) {
+/// The corners of a triangle in the order that makes `n` its outward side.
+fn wound([a, b, c]: [[f32; 3]; 3], n: [f32; 3]) -> [[f32; 3]; 3] {
     let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
     let cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-    let (b, c) = if cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2] < 0.0 { (c, b) } else { (b, c) };
-    gpu.tri(a, n, col);
-    gpu.tri(b, n, col);
-    gpu.tri(c, n, col);
+    if cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2] < 0.0 { [a, c, b] } else { [a, b, c] }
 }
 
 /// The bed outline and a 10 mm grid under everything.

@@ -1,0 +1,11 @@
+{
+  "en": {
+    "print.detail_lines": "Large print: the preview draws the toolpaths as lines."
+  },
+  "ja": {
+    "print.detail_lines": "大きな印刷: プレビューはツールパスを線で表示します。"
+  },
+  "zh": {
+    "print.detail_lines": "大型打印：预览将刀具路径绘制为线条。"
+  }
+}
