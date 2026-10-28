@@ -120,6 +120,8 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         components,
         occurrences: _,
         assembly: _,
+        // Print settings only reach the slicer, never the geometry.
+        print: _,
         sheet,
         plastic,
         parts,
