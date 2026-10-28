@@ -392,13 +392,18 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     let window = ui_kit::Window::new(egui::Id::new("sc_print_settings"), "settings", &title)
         .cards(3.0)
         .page_rows(24.0)
-        .page_padding(egui::vec2(Tokens::get().space_16 + Tokens::get().space_4, Tokens::get().space_16))
+        .page_padding(egui::Margin {
+            left: (Tokens::get().space_16 + Tokens::get().space_4) as i8,
+            right: (Tokens::get().space_16 + Tokens::get().space_4) as i8,
+            top: Tokens::get().space_16 as i8,
+            bottom: Tokens::get().space_16 as i8,
+        })
         .fields()
         .actions(&done, "", None);
     let mut selected = app.print_settings_window.section;
     let mut reset_all = false;
     let overridden = app.session.doc.print.overlay.len();
-    let (closed, action) = window.show_pages(ctx, &mut selected, &PAGES, app, |ui| {
+    let (closed, action) = window.show_pages_with_header(ctx, &mut selected, &PAGES, app, search_header, clear_search, |ui| {
         let label = crate::i18n::tr("print.reset_all_settings");
         if ui_kit::button(ui, label, ui_kit::Button::Enabled(overridden > 0)).on_hover_text(crate::i18n::tr("print.reset_all_hint")).clicked() {
             reset_all = true;
@@ -417,7 +422,6 @@ fn page<const INDEX: usize>(ui: &mut egui::Ui, app: &mut SolveApp) {
     if app.print_settings_window.section != INDEX {
         app.print_settings_window.section = INDEX;
     }
-    search_row(app, ui);
     if !app.print_settings_window.filter.trim().is_empty() {
         search_results(app, ui);
         return;
@@ -431,6 +435,16 @@ fn page<const INDEX: usize>(ui: &mut egui::Ui, app: &mut SolveApp) {
             }
         }
     }
+}
+
+/// The search field, above every page (the window's header strip).
+fn search_header(ui: &mut egui::Ui, app: &mut SolveApp) {
+    search_row(app, ui);
+}
+
+/// A page picked from the list shows that page, not the last search's results.
+fn clear_search(app: &mut SolveApp) {
+    app.print_settings_window.filter.clear();
 }
 
 fn search_row(app: &mut SolveApp, ui: &mut egui::Ui) {
@@ -462,7 +476,7 @@ fn search_results(app: &mut SolveApp, ui: &mut egui::Ui) {
         let title = app.tr(section.label).to_string();
         ui_kit::settings_section(ui, section.label, &title, |ui| {
             form(ui, |ui| {
-                for field in hits {
+                for field in hits.iter().copied() {
                     field_row(app, ui, field, &refused);
                 }
             });
