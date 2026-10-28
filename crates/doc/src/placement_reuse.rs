@@ -149,6 +149,8 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         assembly: _,
         // Drawings draw the model; they feed none of it.
         drawings: _,
+        // Print settings only reach the slicer, never the geometry.
+        print: _,
         sheet,
         plastic,
         parts,
