@@ -766,7 +766,7 @@ fn advanced_page(app: &mut SolveApp, ui: &mut egui::Ui) {
     });
     let key = app.print_settings_window.custom_key.trim().to_string();
     let value = app.print_settings_window.custom_value.trim().to_string();
-    let known = solidcraft_engine::manufacture::engine_reads(&key);
+    let known = solidcraft_engine::print::engine_reads(&key);
     if !key.is_empty() && !known {
         ui.colored_label(t.warning, app.tr("print.advanced_unknown"));
     }
@@ -785,7 +785,7 @@ mod tests {
     fn every_catalogued_key_is_one_the_slicer_reads() {
         let mut seen = std::collections::BTreeSet::new();
         for field in fields() {
-            assert!(solidcraft_engine::manufacture::engine_reads(field.key), "the slicer never reads `{}`", field.key);
+            assert!(solidcraft_engine::print::engine_reads(field.key), "the slicer never reads `{}`", field.key);
             assert!(seen.insert(field.key), "`{}` is catalogued twice", field.key);
             assert!(solidcraft_engine::doc::print_settings::PrintSettings::validate_key(field.key).is_ok(), "{}", field.key);
         }

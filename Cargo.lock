@@ -4338,7 +4338,7 @@ dependencies = [
  "solidcraft-geom",
  "solidcraft-io",
  "solidcraft-kernel",
- "solidcraft-manufacture",
+ "solidcraft-print",
  "solidcraft-render",
  "solidcraft-sketch",
  "thiserror 2.0.21",
@@ -4420,21 +4420,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "solidcraft-manufacture"
-version = "0.22.0"
-dependencies = [
- "serde_json",
- "sx-core",
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "solidcraft-mcp"
 version = "0.28.0"
 dependencies = [
  "serde_json",
  "solidcraft-engine",
  "solidcraft-gpu",
+]
+
+[[package]]
+name = "solidcraft-print"
+version = "0.26.0"
+dependencies = [
+ "serde_json",
+ "sx-core",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

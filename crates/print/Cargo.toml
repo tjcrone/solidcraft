@@ -1,5 +1,5 @@
 [package]
-name = "solidcraft-manufacture"
+name = "solidcraft-print"
 description = "SolidCraft slicing for 3D printing: a Slicer trait and the SlicerX (sx-core) backend behind it"
 version.workspace = true
 edition.workspace = true
