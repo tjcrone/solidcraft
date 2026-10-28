@@ -1,5 +1,5 @@
 use super::*;
-use solidcraft_engine::manufacture::{Path, Sliced};
+use solidcraft_engine::print::{Path, Sliced};
 
 fn held_with(layers: Vec<Layer>) -> HeldSlice {
     HeldSlice {

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use solidcraft_doc::Document;
-use solidcraft_manufacture::Sliced;
+use solidcraft_print::Sliced;
 
 /// What `print.slice` produced and what it was made from.
 #[derive(Debug)]
