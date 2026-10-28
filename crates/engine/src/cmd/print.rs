@@ -182,7 +182,7 @@ fn settings_set(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn settings_clear(s: &mut Session, p: &Value) -> Result<Value> {
-    let keys = string_list(p, "keys");
+    let keys = string_list(SETTINGS_CLEAR, p, "keys")?;
     let mut settings = (*s.doc.print).clone();
     if keys.is_empty() {
         settings.overlay.clear();
@@ -315,7 +315,7 @@ fn output_path<'a>(p: &'a Value, cmd: &str) -> Result<Option<&'a str>> {
 fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     let path = output_path(p, SLICE)?;
     let config = config_text(s, p)?;
-    let bodies = string_list(p, "bodies");
+    let bodies = string_list(SLICE, p, "bodies")?;
     // The held slice already answers this request: the same design (placement and overrides
     // included), the same settings text (a profile file edited on disk reads differently) and
     // the same bodies.
