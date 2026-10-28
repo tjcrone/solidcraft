@@ -52,7 +52,7 @@ solidcraft-kernel = { workspace = true }
 solidcraft-doc = { workspace = true }
 solidcraft-io = { workspace = true }
 solidcraft-render = { workspace = true }
-solidcraft-manufacture = { workspace = true }
+solidcraft-print = { workspace = true }
 solidcraft-profile = { workspace = true }
 solidcraft-ui-text = { workspace = true }
 # the app-neutral panel placement core (engine::panels re-exports it)
