@@ -1,11 +1,11 @@
 //! Slicing the design for 3D printing (`print.*`): the bodies go to the slicer in
-//! `solidcraft-manufacture` as welded meshes and come back as G-code. The session keeps the last
+//! `solidcraft-print` as welded meshes and come back as G-code. The session keeps the last
 //! slice (`crate::held_slice`): `print.preview` reads its toolpaths for a layer preview and
 //! `print.save` writes its G-code, so neither runs the engine again. There is no dialog; the Print
 //! workspace, scripts, the CLI and the control channel all run these commands.
 
 use serde_json::{Map, Value, json};
-use solidcraft_manufacture::{Job, MAX_CONFIG_BYTES, Part, Slicer, Toolpaths};
+use solidcraft_print::{Job, MAX_CONFIG_BYTES, Part, Slicer, Toolpaths};
 
 use super::CommandSpec;
 use crate::held_slice::HeldSlice;
@@ -127,7 +127,7 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn bed(s: &mut Session, p: &Value) -> Result<Value> {
     let config = config_text(s, p)?;
-    let (bed, printable_height) = solidcraft_manufacture::bed_of(&config).map_err(|e| EngineError::Other(format!("{BED}: {e}")))?;
+    let (bed, printable_height) = solidcraft_print::bed_of(&config).map_err(|e| EngineError::Other(format!("{BED}: {e}")))?;
     Ok(json!({"bed": bed, "printable_height": printable_height, "placement": s.doc.print.placement}))
 }
 
@@ -334,9 +334,9 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
         return Ok(out);
     }
     let parts = parts(s, &bodies)?;
-    let slicer = solidcraft_manufacture::default_slicer();
+    let slicer = solidcraft_print::default_slicer();
     let pl = s.doc.print.placement;
-    let placement = solidcraft_manufacture::Placement { x: pl.x as f32, y: pl.y as f32, rotation_deg: pl.rotation as f32 };
+    let placement = solidcraft_print::Placement { x: pl.x as f32, y: pl.y as f32, rotation_deg: pl.rotation as f32 };
     let sliced = slicer.slice(&Job { parts: &parts, config: &config, placement }).map_err(|e| EngineError::Other(format!("{SLICE}: {e}")))?;
     if let Some(path) = path {
         solidcraft_io::vfs::write(path, &sliced.gcode).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
@@ -347,7 +347,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// What print.slice reports about a slice.
-fn slice_result(sliced: &solidcraft_manufacture::Sliced, slicer: &str, path: Option<&str>) -> Value {
+fn slice_result(sliced: &solidcraft_print::Sliced, slicer: &str, path: Option<&str>) -> Value {
     let mut out = json!({
         "bytes": sliced.gcode.len(),
         "layers": sliced.layers,

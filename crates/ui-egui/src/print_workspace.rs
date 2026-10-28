@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solidcraft_engine::geom::{Aabb3, Vec3};
 use solidcraft_engine::held_slice::HeldSlice;
-use solidcraft_engine::manufacture::{Feature, Layer, Toolpaths};
+use solidcraft_engine::print::{Feature, Layer, Toolpaths};
 use solidcraft_engine::printer_host::PrinterHost;
 
 use crate::gpu::{Frame, GpuScene, PaletteIndex, SceneSlot, ViewportCallback};
@@ -1447,7 +1447,7 @@ fn bead_path(gpu: &mut GpuScene, prof: &Profile, pts: &[[f32; 2]], c: PaletteInd
 
 /// A bead the start or end template lays (the purge line): drawn as the layers' beads are, in
 /// runs of points at one height, each with its corners and ends.
-fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::manufacture::FileBead, first_height: f32, detail: Detail) {
+fn file_bead(gpu: &mut GpuScene, bead: &solidcraft_engine::print::FileBead, first_height: f32, detail: Detail) {
     let c = gpu.color(FILE_BEAD_COLOR);
     let half = (bead.width_mm * 0.5).max(0.05);
     if detail == Detail::Lines {
