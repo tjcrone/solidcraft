@@ -304,7 +304,10 @@ pub fn fields() -> impl Iterator<Item = &'static Field> {
 pub const PAGE_FILES: usize = 0;
 pub const PAGE_ADVANCED: usize = SECTIONS.len() + 1;
 
-const PAGES: [ui_kit::WindowPage<SolveApp>; SECTIONS.len() + 2] = [
+// A page for the files, one per catalogue section, and the free-form page, in that order.
+const _: () = assert!(PAGES.len() == SECTIONS.len() + 2);
+
+const PAGES: &[ui_kit::WindowPage<SolveApp>] = &[
     ui_kit::WindowPage {
         icon: "settings",
         label: "print.page_files",
@@ -403,7 +406,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     let mut selected = app.print_settings_window.section;
     let mut reset_all = false;
     let overridden = app.session.doc.print.overlay.len();
-    let (closed, action) = window.show_pages_with_header(ctx, &mut selected, &PAGES, app, search_header, clear_search, |ui| {
+    let (closed, action) = window.show_pages_with_header(ctx, &mut selected, PAGES, app, search_header, clear_search, |ui| {
         let label = crate::i18n::tr("print.reset_all_settings");
         if ui_kit::button(ui, label, ui_kit::Button::Enabled(overridden > 0)).on_hover_text(crate::i18n::tr("print.reset_all_hint")).clicked() {
             reset_all = true;

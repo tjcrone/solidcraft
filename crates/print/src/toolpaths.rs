@@ -30,7 +30,7 @@ pub enum Feature {
 
 impl Feature {
     /// Every feature, in display order.
-    pub const ALL: [Feature; 17] = [
+    pub const ALL: &[Feature] = &[
         Feature::OuterWall,
         Feature::InnerWall,
         Feature::OverhangWall,
@@ -98,7 +98,7 @@ impl Feature {
 
     /// The feature with this [`id`](Self::id), if any.
     pub fn parse(id: &str) -> Option<Feature> {
-        Feature::ALL.into_iter().find(|f| f.id() == id)
+        Feature::ALL.iter().copied().find(|f| f.id() == id)
     }
 }
 
