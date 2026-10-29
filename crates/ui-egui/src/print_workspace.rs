@@ -940,6 +940,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         let callback = ViewportCallback(Frame {
             product_lights: None,
             product: true,
+            upload_error: None,
             key,
             slot: slot.clone(),
             sketch_key: 0,
