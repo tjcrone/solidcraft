@@ -5,8 +5,8 @@ use crate::printer_host::{CameraFrame, Heater, JobState, PrinterHost, PrinterInf
 
 /// A printer that records what it was asked and answers from a script.
 #[derive(Default)]
-struct Fake {
-    uploads: Mutex<Vec<(String, usize, bool)>>,
+pub(crate) struct Fake {
+    pub(crate) uploads: Mutex<Vec<(String, usize, bool)>>,
     cancels: Mutex<u32>,
     jobs: Mutex<Vec<JobState>>,
     status: Mutex<PrinterStatus>,
@@ -70,7 +70,7 @@ impl PrinterHost for Fake {
 
 const KLIPPER_02: &str = r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#;
 
-fn sliced_session(host: &Arc<Fake>) -> Session {
+pub(crate) fn sliced_session(host: &Arc<Fake>) -> Session {
     let mut s = Session::default();
     s.set_printer_host(Some(host.clone()));
     run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10}));

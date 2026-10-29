@@ -168,6 +168,7 @@ pub const DOCUMENTED: &[&str] = &[
     "print.save",
     "print.settings.set",
     "print.slice",
+    "print.start",
     "print.upload",
     "pulley.insert",
     "sheet.convert",

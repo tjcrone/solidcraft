@@ -130,6 +130,7 @@ pub mod plugin;
 pub mod plugin_storage;
 pub mod point_cloud;
 pub mod point_cloud_deviation;
+pub mod print;
 pub mod print_face;
 pub mod pulleys;
 pub mod render;

@@ -62,21 +62,11 @@ pub struct State {
     bed: Option<BedInfo>,
     /// A drag of the part across the bed in Prepare.
     drag: Option<Drag>,
-    /// Whether the held slice answers the panel's request, and what that was checked for.
-    current: Option<(SliceKey, bool)>,
     /// The bead detail the preview's toolpaths were last drawn at.
     detail: Option<Detail>,
     /// The toolpaths of every layer, and the slice and travel setting they were built for. The
     /// slice itself is kept, so a new one can never take its address and pass for it.
     layered: Option<(Arc<HeldSlice>, bool, Arc<Layered>)>,
-}
-
-/// What a slice request depends on: the files and when they changed, the design, the slice.
-#[derive(Clone, PartialEq, Eq)]
-struct SliceKey {
-    files: Vec<(String, Option<u64>)>,
-    revision: u64,
-    held: usize,
 }
 
 /// The bed `print.bed` reported, and what it was read for.
@@ -213,7 +203,6 @@ impl Default for State {
             uploaded: None,
             bed: None,
             drag: None,
-            current: None,
             detail: None,
             layered: None,
         }
@@ -358,45 +347,6 @@ fn nudge_key(app: &mut SolveApp, key: egui::Key, mods: egui::Modifiers) -> bool 
     true
 }
 
-/// Whether the held slice already answers what Slice would ask for: then Slice is greyed. The
-/// engine is asked once per change of the files, their modification times, the design or the
-/// held slice.
-fn slice_current(app: &mut SolveApp) -> bool {
-    let files = app.print_workspace.settings.config_files.clone();
-    let stamps: Vec<(String, Option<u64>)> = files
-        .iter()
-        .map(|f| {
-            let modified =
-                std::fs::metadata(f).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
-            (f.clone(), modified)
-        })
-        .collect();
-    let key = SliceKey { files: stamps, revision: app.session.revision, held: app.session.print_slice().map_or(0, |h| Arc::as_ptr(h) as usize) };
-    if let Some((k, v)) = &app.print_workspace.current
-        && *k == key
-    {
-        return *v;
-    }
-    let current =
-        app.session.print_slice().is_some() && app.run("print.slice", json!({"check": true, "config": files})).is_ok_and(|v| v["current"] == true);
-    app.print_workspace.current = Some((key, current));
-    current
-}
-
-/// The Slice button, greyed while the held slice is up to date.
-fn slice_button(app: &mut SolveApp, ui: &mut egui::Ui) {
-    let current = slice_current(app);
-    let button = crate::ui_kit::button(
-        ui,
-        app.tr("cmd.print.slice"),
-        if current { crate::ui_kit::Button::Enabled(false) } else { crate::ui_kit::Button::Primary },
-    );
-    let button = if current { button.on_disabled_hover_text(app.tr("print.slice_current")) } else { button };
-    if button.clicked() {
-        slice(app);
-    }
-}
-
 /// Run `print.place`, reporting a refusal on the status line.
 fn place(app: &mut SolveApp, params: serde_json::Value) {
     if let Err(e) = app.run("print.place", params) {
@@ -504,6 +454,8 @@ pub fn start(app: &mut SolveApp, id: &str) {
         "print.slice" => slice(app),
         "print.save" => save(app),
         "print.upload" => send_to_printer(app, false),
+        // Print asks first, as the printer starts at once.
+        "print.start" => app.print_workspace.confirm_print = true,
         "print.cancel" => cancel_print(app),
         "print.place" => place(app, json!({"centre": true})),
         _ => {}
@@ -685,9 +637,6 @@ fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     if overrides > 0 {
         ui.small(crate::i18n::format("print.overrides_count", &[("n", &overrides.to_string())]));
     }
-    if crate::ui_kit::button(ui, app.tr("print.open_settings"), crate::ui_kit::Button::Normal).clicked() {
-        app.start("print.settings.set");
-    }
     ui.separator();
     ui.heading(app.tr("print.placement_title"));
     wrapped_small(ui, app.tr("print.placement_hint"));
@@ -714,17 +663,11 @@ fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             }
         });
     });
-    if crate::ui_kit::button(ui, app.tr("cmd.print.place"), crate::ui_kit::Button::Enabled(!p.is_default())).clicked() {
-        place(app, json!({"centre": true}));
-    }
-    ui.separator();
-    slice_button(app, ui);
 }
 
 /// Preview: the result, the toolpath legend, and the way to the printer.
 fn slice_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     ui.heading(app.tr("print.slice_title"));
-    slice_button(app, ui);
     match app.session.print_slice().cloned() {
         None => {
             wrapped_small(ui, app.tr("print.slice_from_prepare"));
@@ -822,18 +765,6 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
         }
     }
     job_line(app, ui, state);
-    let can_upload = app.session.print_slice().is_some_and(|h| !h.stale(&app.session.doc));
-    ui.horizontal(|ui| {
-        if crate::ui_kit::button(ui, app.tr("cmd.print.upload"), crate::ui_kit::Button::Enabled(can_upload)).clicked() {
-            send_to_printer(app, false);
-        }
-        if crate::ui_kit::button(ui, app.tr("print.upload_and_print"), crate::ui_kit::Button::Enabled(can_upload)).clicked() {
-            app.print_workspace.confirm_print = true;
-        }
-    });
-    if matches!(state, "printing" | "paused") && crate::ui_kit::button(ui, app.tr("cmd.print.cancel"), crate::ui_kit::Button::Normal).clicked() {
-        cancel_print(app);
-    }
     // The status line follows the printer while the workspace is open.
     ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
 }
@@ -868,9 +799,6 @@ fn result_rows(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
         for w in held.sliced.report.warnings.iter().take(12) {
             ui.small(w);
         }
-    }
-    if crate::ui_kit::button(ui, app.tr("cmd.print.save"), crate::ui_kit::Button::Normal).clicked() {
-        save(app);
     }
 }
 
