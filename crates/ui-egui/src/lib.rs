@@ -1643,7 +1643,7 @@ impl SolveApp {
             print_settings_window::open(self);
             return;
         }
-        if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.cancel" | "print.place") {
+        if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.start" | "print.cancel" | "print.place") {
             print_workspace::start(self, id);
             return;
         }
@@ -2992,6 +2992,8 @@ impl SolveApp {
         self.resolve_fit(ui.ctx());
         params_dialog::show(self, ui.ctx());
         print_settings_window::show(self, ui.ctx());
+        // Print's "start printing?" question, on whichever Print tab it was asked from.
+        print_workspace::confirm_print(self, ui.ctx());
         design_properties::show(self, ui.ctx());
         sketch_report::show(self, ui.ctx());
         bom_panel::show(self, ui.ctx());

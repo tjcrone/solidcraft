@@ -334,3 +334,54 @@ fn print_settings_cancel_restores_and_ok_keeps() {
     assert_eq!(overlay(&app).get("wall_loops"), Some(&json!(3)), "OK keeps the change");
     assert!(!app.print_settings_window.open);
 }
+
+/// Print from the ribbon (or a shortcut) asks before anything goes to the printer: it opens the
+/// "start printing?" question and starts no upload, with a slice ready and a printer that would
+/// take it.
+#[test]
+fn print_from_the_ribbon_asks_first() {
+    use serde_json::json;
+    use solidcraft_engine::printer_host::{CameraFrame, JobState, PrinterHost, PrinterInfo, PrinterStatus, Webcam};
+    use std::sync::Mutex;
+    /// A printer that counts uploads and answers nothing else.
+    #[derive(Default)]
+    struct Counting(Mutex<u32>);
+    impl PrinterHost for Counting {
+        fn info(&self) -> PrinterInfo {
+            PrinterInfo { name: "test".into(), url: "http://test".into() }
+        }
+        fn webcams(&self) -> Vec<Webcam> {
+            Vec::new()
+        }
+        fn script(&self, _gcode: &str) -> Result<u64, String> {
+            Err("not in this test".into())
+        }
+        fn watch_camera(&self, _url: &str, _on: bool) {}
+        fn camera_frame(&self) -> Result<Option<CameraFrame>, String> {
+            Ok(None)
+        }
+        fn upload(&self, _name: &str, _gcode: Vec<u8>, _start: bool) -> Result<u64, String> {
+            *self.0.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+            Ok(1)
+        }
+        fn cancel_print(&self) -> Result<u64, String> {
+            Err("not in this test".into())
+        }
+        fn job(&self, _id: u64) -> Option<JobState> {
+            None
+        }
+        fn status(&self) -> PrinterStatus {
+            PrinterStatus { reachable: true, state: "standby".into(), ..Default::default() }
+        }
+    }
+    let host = Arc::new(Counting::default());
+    let mut s = solidcraft_engine::Session::default();
+    s.set_printer_host(Some(host.clone()));
+    s.execute("solid.box", &json!({"length": 10, "width": 10, "height": 10})).unwrap_or_else(|e| panic!("{e}"));
+    s.execute("print.slice", &json!({"settings": {"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}}))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut app = SolveApp::new(s, crate::Services::default());
+    app.start("print.start");
+    assert!(app.print_workspace.confirm_print, "the question is open");
+    assert_eq!(*host.0.lock().unwrap_or_else(|e| e.into_inner()), 0, "nothing was sent before the answer");
+}
