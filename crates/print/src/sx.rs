@@ -10,9 +10,10 @@ use sx_core::preflight;
 use crate::toolpaths::{Feature, Layer, Path, Toolpaths};
 use crate::{Error, Job, MAX_CONFIG_BYTES, Part, Refused, Report, Result, Sliced, Slicer};
 
-/// The engine release the workspace pins (`sx-core`'s `tag` in the root Cargo.toml); the crate
-/// itself does not say its version. A test keeps the two in step.
-pub const ENGINE_VERSION: &str = "0.1.9";
+/// The engine version and commit the workspace pins (`sx-core`'s version in Cargo.lock and its
+/// `rev` in the root Cargo.toml); the crate itself does not say them. A test keeps them in step.
+pub const ENGINE_VERSION: &str = "0.2.5";
+pub const ENGINE_COMMIT: &str = "71ce5a5a";
 
 /// SlicerX's `sx-core` engine.
 #[derive(Clone, Copy, Debug, Default)]
@@ -20,7 +21,7 @@ pub struct SxSlicer;
 
 impl Slicer for SxSlicer {
     fn name(&self) -> String {
-        format!("SlicerX sx-core {ENGINE_VERSION}")
+        format!("SlicerX sx-core {ENGINE_VERSION} ({ENGINE_COMMIT})")
     }
 
     fn slice(&self, job: &Job) -> Result<Sliced> {
@@ -168,7 +169,9 @@ fn feature(f: api::Feature) -> Option<Feature> {
         api::Feature::OverhangWall => Feature::OverhangWall,
         api::Feature::TopSurface => Feature::TopSurface,
         api::Feature::BottomSurface => Feature::BottomSurface,
-        api::Feature::InternalSolid => Feature::InternalSolid,
+        // A floating vertical shell is internal solid infill printed at its own speed; the
+        // engine's own preview counts it as internal solid infill too.
+        api::Feature::InternalSolid | api::Feature::FloatingShell => Feature::InternalSolid,
         api::Feature::SparseInfill => Feature::SparseInfill,
         api::Feature::Bridge => Feature::Bridge,
         api::Feature::InternalBridge => Feature::InternalBridge,
