@@ -182,7 +182,15 @@ fn temperatures_pauses_and_cameras_go_through_scripts_and_the_list() {
         assert!(s.execute("print.heat", &bad).is_err(), "{bad}");
     }
     assert_eq!(host.scripts.lock().unwrap().len(), 3, "a refused request sends nothing");
+    // Pause, Resume and Cancel follow what the printer says it is doing.
+    assert!(s.execute("print.pause", &json!({})).is_err(), "nothing to pause on an unreachable printer");
+    *host.status.lock().unwrap() = PrinterStatus { reachable: true, state: "standby".into(), ..Default::default() };
+    assert!(s.execute("print.pause", &json!({})).is_err(), "nothing to pause while idle");
+    assert!(s.execute("print.cancel", &json!({})).is_err(), "nothing to cancel while idle");
+    host.status.lock().unwrap().state = "printing".into();
     run(&mut s, "print.pause", json!({}));
+    assert!(s.execute("print.resume", &json!({})).is_err(), "not paused yet");
+    host.status.lock().unwrap().state = "paused".into();
     run(&mut s, "print.resume", json!({}));
     assert_eq!(&host.scripts.lock().unwrap()[3..], ["PAUSE", "RESUME"]);
     let w = run(&mut s, "print.webcams", json!({}));
