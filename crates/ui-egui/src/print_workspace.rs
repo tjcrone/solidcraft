@@ -66,6 +66,9 @@ pub struct State {
     current: Option<(SliceKey, bool)>,
     /// The bead detail the preview's toolpaths were last drawn at.
     detail: Option<Detail>,
+    /// The toolpaths of every layer, and the slice and travel setting they were built for. The
+    /// slice itself is kept, so a new one can never take its address and pass for it.
+    layered: Option<(Arc<HeldSlice>, bool, Arc<Layered>)>,
 }
 
 /// What a slice request depends on: the files and when they changed, the design, the slice.
@@ -178,6 +181,8 @@ enum Source {
     Toolpaths {
         slice: usize,
         travels: bool,
+        /// How many layers, from the first, are shown.
+        shown: usize,
     },
     /// The design placed on the bed: the placement in thousandths of a millimetre and of a
     /// degree, the bed in tenths of a millimetre.
@@ -210,6 +215,7 @@ impl Default for State {
             drag: None,
             current: None,
             detail: None,
+            layered: None,
         }
     }
 }
@@ -930,10 +936,6 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         let radius = bounds.diagonal().max(10.0) + bounds.center().dist(camera.target);
         let eye = camera.eye();
         let ppp = ui.ctx().pixels_per_point();
-        let clip = match (app.session.print_slice(), app.print_workspace.top_layer) {
-            (Some(held), Some(i)) if app.ui.tab == PREVIEW => held.sliced.toolpaths.layers.get(i).map_or([0.0; 4], |l| [0.0, 0.0, 1.0, l.z + 1e-3]),
-            _ => [0.0; 4],
-        };
         let slot = app.print_workspace.slot.clone();
         let callback = ViewportCallback(Frame {
             product: true,
@@ -949,7 +951,8 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             view_proj: camera.view_proj(f64::from(rect.width() / rect.height().max(1.0)), radius).to_f32(),
             back: camera.back().to_f32(),
             size_px: [rect.width() * ppp, rect.height() * ppp],
-            clip,
+            // The slider leaves the layers above out of the scene itself (`upload`), so nothing is cut.
+            clip: [0.0; 4],
             cap: [0.0; 4],
             images: Vec::new(),
             analysis: [0.0; 8],
@@ -1102,16 +1105,28 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
     let shift = drag_shift(app);
     let drag = [(shift[0] * 10.0).round() as i64, (shift[1] * 10.0).round() as i64];
     let source = match app.session.print_slice() {
-        Some(held) if app.ui.tab == PREVIEW => Source::Toolpaths { slice: Arc::as_ptr(held) as usize, travels: app.print_workspace.show_travels },
+        Some(held) if app.ui.tab == PREVIEW => Source::Toolpaths {
+            slice: Arc::as_ptr(held) as usize,
+            travels: app.print_workspace.show_travels,
+            shown: shown_layer(app, held.sliced.toolpaths.layers.len()),
+        },
         _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize, placement, bed, drag },
     };
     if app.print_workspace.uploaded == Some(source) {
         return Ok(());
     }
     let scene = match (source, app.session.print_slice().cloned()) {
-        (Source::Toolpaths { .. }, Some(held)) => {
-            let (mut scene, detail) = toolpath_scene(&held, app.print_workspace.show_travels)?;
-            app.print_workspace.detail = Some(detail);
+        (Source::Toolpaths { travels, shown, .. }, Some(held)) => {
+            let layered = match &app.print_workspace.layered {
+                Some((made_for, with_travels, layered)) if Arc::ptr_eq(made_for, &held) && *with_travels == travels => layered.clone(),
+                _ => {
+                    let layered = Arc::new(Layered::build(&held, travels)?);
+                    app.print_workspace.layered = Some((held.clone(), travels, layered.clone()));
+                    layered
+                }
+            };
+            let mut scene = layered.shown(shown);
+            app.print_workspace.detail = Some(layered.detail);
             shell(app, &mut scene, held.sliced.offset);
             scene
         }
@@ -1245,36 +1260,78 @@ impl Cost {
 /// The toolpaths as beads: each segment a bead with a flat top and half-round sides, fans of
 /// the same profile on the outside of every corner so the bead turns without a notch, and caps
 /// on open ends, all placements of shared pieces ([`Instancer`]). Past the budget the beads
-/// become lines. Returns the scene and the detail it was drawn at.
-fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<(GpuScene, Detail), String> {
-    let paths: &Toolpaths = &held.sliced.toolpaths;
-    let travel_count: usize = paths.layers.iter().map(|l| l.paths.len().saturating_sub(1)).sum();
-    let travel_bytes = if travels { travel_count * LINE_BYTES } else { 0 };
-    let cost = Cost::of(paths);
-    let detail = [Detail::Beads, Detail::Lines]
-        .into_iter()
-        .find(|d| cost.bytes(*d).saturating_add(travel_bytes) <= MAX_GEOMETRY_BYTES)
-        .ok_or_else(|| format!("{} segments are past the preview's geometry budget", cost.segments))?;
-    let mut gpu = GpuScene::default();
-    let mut inst = Instancer::default();
-    bed(&mut gpu, held.sliced.bed);
-    let first_height = paths.layers.first().map_or(0.2, |l| l.height);
-    for bead in &paths.file_beads {
-        file_bead(&mut gpu, &mut inst, bead, first_height, detail);
-    }
-    for layer in &paths.layers {
-        layer_beads(&mut gpu, &mut inst, layer, detail);
-        if travels {
-            // A little above the beads, so the line never fights with the top faces.
-            let z = layer.z + TRAVEL_LIFT;
-            let travel = gpu.color(TRAVEL_COLOR);
-            for (a, b) in layer.travels() {
-                gpu.line([a[0], a[1], z], [b[0], b[1], z], travel, 1.0, false);
-            }
+/// become lines. Built once for every layer, with where each layer ends: the layer slider shows
+/// the first layers whole ([`Layered::shown`]), never cut through by height, and the detail,
+/// chosen for the whole print, stays put while it moves.
+struct Layered {
+    /// Everything but the placements and the lines: the bed, the palette.
+    base: GpuScene,
+    /// The shared pieces with every layer's placements, in layer order.
+    meshes: Vec<crate::gpu::InstancedMesh>,
+    /// Every layer's lines (travel moves, or the beads as lines), in layer order.
+    lines: Vec<u8>,
+    /// After each layer: the bytes of each piece's placements (by its index in `meshes`; a piece
+    /// first placed later has none yet) and of the lines.
+    ends: Vec<(Vec<usize>, usize)>,
+    detail: Detail,
+}
+
+impl Layered {
+    fn build(held: &HeldSlice, travels: bool) -> Result<Layered, String> {
+        let paths: &Toolpaths = &held.sliced.toolpaths;
+        let travel_count: usize = paths.layers.iter().map(|l| l.paths.len().saturating_sub(1)).sum();
+        let travel_bytes = if travels { travel_count * LINE_BYTES } else { 0 };
+        let cost = Cost::of(paths);
+        let detail = [Detail::Beads, Detail::Lines]
+            .into_iter()
+            .find(|d| cost.bytes(*d).saturating_add(travel_bytes) <= MAX_GEOMETRY_BYTES)
+            .ok_or_else(|| format!("{} segments are past the preview's geometry budget", cost.segments))?;
+        let mut gpu = GpuScene::default();
+        let mut inst = Instancer::default();
+        bed(&mut gpu, held.sliced.bed);
+        let first_height = paths.layers.first().map_or(0.2, |l| l.height);
+        for bead in &paths.file_beads {
+            file_bead(&mut gpu, &mut inst, bead, first_height, detail);
         }
+        let mut ends = Vec::with_capacity(paths.layers.len());
+        for layer in &paths.layers {
+            layer_beads(&mut gpu, &mut inst, layer, detail);
+            if travels {
+                // A little above the beads, so the line never fights with the top faces.
+                let z = layer.z + TRAVEL_LIFT;
+                let travel = gpu.color(TRAVEL_COLOR);
+                for (a, b) in layer.travels() {
+                    gpu.line([a[0], a[1], z], [b[0], b[1], z], travel, 1.0, false);
+                }
+            }
+            ends.push((inst.meshes.iter().map(|m| m.instances.len()).collect(), gpu.lines.len()));
+        }
+        let lines = std::mem::take(&mut gpu.lines);
+        Ok(Layered { base: gpu, meshes: inst.meshes, lines, ends, detail })
     }
-    gpu.instanced.extend(inst.meshes.into_values());
-    Ok((gpu, detail))
+
+    /// The scene of the first `shown` layers (all of them past the last).
+    fn shown(&self, shown: usize) -> GpuScene {
+        let mut out = self.base.clone();
+        let Some((meshes, lines)) = shown.checked_sub(1).and_then(|i| self.ends.get(i.min(self.ends.len().saturating_sub(1)))) else {
+            return out;
+        };
+        out.lines = self.lines.get(..*lines).unwrap_or_default().to_vec();
+        out.instanced = self
+            .meshes
+            .iter()
+            .zip(meshes)
+            .filter(|(_, end)| **end > 0)
+            .map(|(m, end)| crate::gpu::InstancedMesh {
+                key: m.key,
+                tris: m.tris.clone(),
+                instances: m.instances.get(..*end).unwrap_or_default().to_vec(),
+                look: m.look,
+                levels: m.levels.clone(),
+            })
+            .collect();
+        out
+    }
 }
 
 /// The beads as placements of a few shared pieces, each made once per profile in its own frame
@@ -1284,7 +1341,10 @@ fn toolpath_scene(held: &HeldSlice, travels: bool) -> Result<(GpuScene, Detail),
 /// stretch only lengthens a straight run, whose faces all run along it, so no normal changes.
 #[derive(Default)]
 struct Instancer {
-    meshes: std::collections::HashMap<u64, crate::gpu::InstancedMesh>,
+    /// The pieces in the order they were first placed.
+    meshes: Vec<crate::gpu::InstancedMesh>,
+    /// Each piece's index in `meshes`, by key.
+    index: std::collections::HashMap<u64, usize>,
 }
 
 /// Which shared piece of a profile.
@@ -1304,13 +1364,17 @@ impl Instancer {
         prof.key().hash(&mut h);
         piece.hash(&mut h);
         let key = h.finish();
-        let mesh = self.meshes.entry(key).or_insert_with(|| crate::gpu::InstancedMesh {
-            key,
-            tris: Arc::new(shared(prof, &piece_tris(prof, &piece))),
-            instances: Vec::new(),
-            look: crate::gpu::InstanceLook::Opaque,
-            levels: Vec::new(),
+        let i = *self.index.entry(key).or_insert_with(|| {
+            self.meshes.push(crate::gpu::InstancedMesh {
+                key,
+                tris: Arc::new(shared(prof, &piece_tris(prof, &piece))),
+                instances: Vec::new(),
+                look: crate::gpu::InstanceLook::Opaque,
+                levels: Vec::new(),
+            });
+            self.meshes.len() - 1
         });
+        let Some(mesh) = self.meshes.get_mut(i) else { return };
         mesh.place(rows, c);
     }
 
