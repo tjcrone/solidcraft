@@ -383,6 +383,9 @@ pub const SECTIONS: &[Section] = &[
     Section { tab: "WELDMENTS", panel: "SKETCH", promoted: 1, ids: &["sketch.create"] },
     Section { tab: "WELDMENTS", panel: "CREATE", promoted: 2, ids: &["frame.member", "frame.end_cap"] },
     Section { tab: "WELDMENTS", panel: "CONFIGURE", promoted: 2, ids: CONFIGURE },
+    Section { tab: "PREPARE", panel: "PREPARE", promoted: 3, ids: &["print.settings.set", "print.place", "print.slice"] },
+    Section { tab: "PREVIEW", panel: "OUTPUT", promoted: 3, ids: &["print.slice", "print.save", "print.upload"] },
+    Section { tab: "DEVICE", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
 ];
 
 // Migration data only: Render commands remain registered, but have no live ribbon sections.
@@ -437,10 +440,6 @@ const LEGACY_RENDER_SECTIONS: &[Section] = &[
         ids: &["render.export", "render.result.regrade", "render.compare", "render.status", "render.backends"],
     },
     Section { tab: "RENDER", panel: "BATCH", promoted: 1, ids: &["render.batch"] },
-    Section { tab: "PRINTER", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
-    Section { tab: "PREPARE", panel: "PREPARE", promoted: 3, ids: &["print.settings.set", "print.place", "print.slice"] },
-    Section { tab: "PREVIEW", panel: "OUTPUT", promoted: 3, ids: &["print.slice", "print.save", "print.upload"] },
-    Section { tab: "DEVICE", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
 ];
 
 /// Compact source labels for painted big buttons only. Menus, search and tooltips
