@@ -301,5 +301,5 @@ fn beads_of_nearly_one_width_share_their_pieces() {
     let (scene, _) = scene_of(&held_with(vec![Layer { z: 0.2, height: 0.2, time_s: 1.0, paths }]), false);
     assert_eq!(placements(&scene), 100 * 5);
     assert!(scene.instanced.len() <= 4, "{} pieces", scene.instanced.len());
-    assert!((bead_half(0.41999998) - bead_half(0.42)).abs() < 1e-9);
+    assert!((bead_half(0.42f32.next_down()) - bead_half(0.42)).abs() < 1e-9);
 }
