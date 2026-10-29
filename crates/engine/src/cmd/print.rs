@@ -573,8 +573,13 @@ fn config_text(s: &Session, p: &Value) -> Result<String> {
     Ok(Value::Object(config).to_string())
 }
 
-/// The bodies to print, tessellated and welded the way the mesh export does, so each is closed
-/// where its faces meet.
+/// The chord tolerance the bodies are meshed at for slicing, in millimetres: fixed, not a share of
+/// the body's size, so a part slices the same whatever else is in the design. Fine enough that the
+/// mesh's facets don't show in the toolpaths. To become a setting.
+const SLICE_CHORD_MM: f64 = 0.002;
+
+/// The bodies to print, tessellated at [`SLICE_CHORD_MM`] and welded the way the mesh export does,
+/// so each is closed where its faces meet.
 fn parts(s: &Session, bodies: &[String]) -> Result<Vec<Part>> {
     let state = s.world_state();
     for name in bodies {
@@ -584,7 +589,7 @@ fn parts(s: &Session, bodies: &[String]) -> Result<Vec<Part>> {
     }
     let mut parts = Vec::new();
     for b in state.bodies.iter().filter(|b| bodies.is_empty() || bodies.contains(&b.name)) {
-        let mesh = solidcraft_io::export_mesh(&b.body)?;
+        let mesh = b.body.tessellate(SLICE_CHORD_MM)?;
         let eps = (b.body.size() * 1e-6).max(1e-7);
         let (positions, triangles) = solidcraft_io::weld(&mesh.positions, &mesh.triangles, eps);
         let positions = positions.iter().map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect();
