@@ -324,9 +324,14 @@ pub const SECTIONS: &[Section] = &[
     Section { tab: "WELDMENTS", panel: "SKETCH", promoted: 1, ids: &["sketch.create"] },
     Section { tab: "WELDMENTS", panel: "CREATE", promoted: 1, ids: &["frame.member"] },
     Section { tab: "WELDMENTS", panel: "CONFIGURE", promoted: 2, ids: CONFIGURE },
-    Section { tab: "PREPARE", panel: "PREPARE", promoted: 3, ids: &["print.settings.set", "print.place", "print.slice"] },
-    Section { tab: "PREVIEW", panel: "OUTPUT", promoted: 3, ids: &["print.slice", "print.save", "print.upload"] },
-    Section { tab: "DEVICE", panel: "PRINT", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
+    // Print's tabs: each tab's own tools, then Slice and Print, pinned at the right in every tab
+    // as Sketch's Finish group is.
+    Section { tab: "PREPARE", panel: "PLACE", promoted: 1, ids: &["print.place"] },
+    Section { tab: "PREPARE", panel: "PRINT", promoted: 2, ids: &["print.slice", "print.start"] },
+    Section { tab: "PREVIEW", panel: "OUTPUT", promoted: 2, ids: &["print.save", "print.upload"] },
+    Section { tab: "PREVIEW", panel: "PRINT", promoted: 2, ids: &["print.slice", "print.start"] },
+    Section { tab: "DEVICE", panel: "JOB", promoted: 3, ids: &["print.pause", "print.resume", "print.cancel"] },
+    Section { tab: "DEVICE", panel: "PRINT", promoted: 2, ids: &["print.slice", "print.start"] },
 ];
 
 // Migration data only: Render commands remain registered, but have no live ribbon sections.
@@ -440,7 +445,6 @@ pub const RIBBON_LABELS: &[(&str, &str)] = &[
     ("plastic.manage_rules", "Plastic Rules"),
     ("pointcloud.insert", "Point Clouds"),
     ("print.place", "Centre"),
-    ("print.settings.set", "Settings"),
     ("print.upload", "Upload"),
     ("render.scene", "Scene"),
     ("sheet.export_bend_table", "Bend Table"),

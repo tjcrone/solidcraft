@@ -11,12 +11,17 @@ use super::CommandSpec;
 use crate::held_slice::HeldSlice;
 use crate::params::{bad, bool_, string_list};
 use crate::printer_host::gcode_file_name;
+use crate::schema::print::{StartParams, StartResult};
+use crate::schema::{TypedContract, output_schema_for};
 use crate::{EngineError, Result, Session};
+
+const START_CONTRACT: TypedContract<StartParams> = TypedContract::new();
 
 const SLICE: &str = "print.slice";
 const PREVIEW: &str = "print.preview";
 const SAVE: &str = "print.save";
 const UPLOAD: &str = "print.upload";
+const START: &str = "print.start";
 const JOB: &str = "print.job";
 const STATUS: &str = "print.status";
 const CANCEL: &str = "print.cancel";
@@ -39,31 +44,40 @@ const MAX_BED_C: f64 = 150.0;
 const MAX_PREVIEW_POINTS: usize = 2_000_000;
 
 pub static COMMANDS: &[CommandSpec] = &[
-    CommandSpec::new(SLICE, "Slice", slice).noundo().at("PREPARE", "PREPARE").icon("mesh_export").params(
+    CommandSpec::new(SLICE, "Slice", slice).noundo().at("PREPARE", "PRINT").icon("mesh_export").params(
         "check?: true only answers whether the held slice already matches this request → current: bool; path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files' and the design's own overrides (print.settings.set); bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written. A request the held slice already answers (same design, settings and bodies) is not sliced again: the held result comes back with reused: true",
     ),
     CommandSpec::new(PREVIEW, "Preview Toolpaths", preview).noundo().doc_only().icon("inspect").params(
         "layer?: index (0 = first) → stale (the design changed since the slice), slicer, layers, segments, time_s, filament_mm, filament_g, bed: [min_x, min_y, max_x, max_y], printable_height, offset: [x, y, z] (plate coordinates = design coordinates + offset; the toolpaths, bounds and bed are plate coordinates, as the G-code is), bounds: {min: [x, y, z], max: [x, y, z]}, file_beads: {count, length_mm} (beads the start and end templates lay on the bed), z: [top of each layer], features: [{feature, label, paths, length_mm}]; with layer: layer: {index, z, height, time_s, paths: [{feature, tool, width_mm, speed_mm_s, points: [[x, y], …]}]}. Needs a print.slice in this session",
     ),
-    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().at("PREVIEW", "OUTPUT").icon("export").params(
+    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().enabled(has_slice).at("PREVIEW", "OUTPUT").icon("export").params(
         "path: the .gcode file to write with the G-code of the session's last print.slice → path, bytes, stale (the design changed since the slice)",
     ),
-    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().at("PREVIEW", "OUTPUT").icon("send").params(
+    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().enabled(can_send).at("PREVIEW", "OUTPUT").icon("send").params(
         "name?: the file name on the printer (default: the design's name; always ends in .gcode); start?: bool (print it at once; default false) → job, name, bytes, start. Sends the session's last print.slice to the installed printer in the background; print.job reports progress. Refused while the design has changed since the slice, and without a printer",
     ),
+    CommandSpec::new(START, "Print", crate::checked!("print.start", start))
+        .noundo()
+        .doc_only()
+        .enabled(can_send)
+        .at("PREVIEW", "PRINT")
+        .icon("send")
+        .contract(&START_CONTRACT)
+        .output(output_schema_for::<StartResult>)
+        .params("name?: the file name on the printer (default: the design's name; always ends in .gcode) → job, name, bytes, start: true. Uploads the session's last print.slice to the installed printer and starts printing it (print.upload with start: true); print.job reports progress. Refused while the design has changed since the slice, and without a printer"),
     CommandSpec::new(JOB, "Printer Job", job).noundo().doc_only().icon("list").params(
         "job: id from print.upload or print.cancel → job, state: queued | running (sent, total) | done (message, started) | failed (message)",
     ),
     CommandSpec::new(STATUS, "Printer Status", status).noundo().doc_only().icon("inspect").params(
         "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message, timelapse (bool; null without the printer's timelapse plugin). Never waits on the network: the host's latest answer",
     ),
-    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("DEVICE", "PRINT").icon("stop").params(
+    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("DEVICE", "JOB").icon("stop").params(
         "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
     ),
-    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("DEVICE", "PRINT").icon("pause").params(
+    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("DEVICE", "JOB").icon("pause").params(
         "No parameters → job. Asks the printer to pause the running print (Klipper's PAUSE); print.job reports the answer",
     ),
-    CommandSpec::new(RESUME, "Resume Print", resume).noundo().doc_only().at("DEVICE", "PRINT").icon("play").params(
+    CommandSpec::new(RESUME, "Resume Print", resume).noundo().doc_only().at("DEVICE", "JOB").icon("play").params(
         "No parameters → job. Asks the printer to resume a paused print (Klipper's RESUME); print.job reports the answer",
     ),
     CommandSpec::new(HEAT, "Set Temperatures", heat).noundo().doc_only().icon("settings").params(
@@ -78,11 +92,11 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(SETTINGS_GET, "Read Print Settings", settings_get).noundo().doc_only().icon("settings").params(
         "config?: path, or [paths], of the settings files; keys?: [names] (default: the design's overrides and every key of the files) → settings: {key: {value, source: design | file | default, file?}}, overlay: {key: value} (the design's own overrides)",
     ),
-    CommandSpec::new(SETTINGS_SET, "3D Print Settings", settings_set).doc_only().at("PREPARE", "PREPARE").icon("settings").params(
+    CommandSpec::new(SETTINGS_SET, "3D Print Settings", settings_set).doc_only().icon("settings").params(
         "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
     ),
     CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
-    CommandSpec::new(PLACE, "Centre on Bed", place).doc_only().at("PREPARE", "PREPARE").icon("move").params(
+    CommandSpec::new(PLACE, "Centre on Bed", place).doc_only().at("PREPARE", "PLACE").icon("move").params(
         "x?: mm from the bed's centre; y?: mm; rotation?: degrees about Z, about the design's footprint centre; centre?: true puts it back in the middle, unturned → placement: {x, y, rotation}. Saved in the design; print.slice puts the design there",
     ),
     CommandSpec::new(BED, "Print Bed", bed).noundo().doc_only().icon("inspect").params(
@@ -252,20 +266,52 @@ fn host<'a>(s: &'a Session, cmd: &str) -> Result<&'a std::sync::Arc<dyn crate::p
 }
 
 fn upload(s: &mut Session, p: &Value) -> Result<Value> {
-    let held = held(s, UPLOAD)?;
-    if held.stale(&s.doc) {
-        return Err(bad(UPLOAD, "the design changed since the last slice; slice it again before uploading"));
-    }
     let start = bool_(p, "start").unwrap_or(false);
+    let (job, name, bytes) = send(s, p, start, UPLOAD)?;
+    Ok(json!({"job": job, "name": name, "bytes": bytes, "start": start}))
+}
+
+/// Save G-code: a slice is held.
+fn has_slice(s: &Session) -> std::result::Result<(), String> {
+    if s.print_slice().is_some() { Ok(()) } else { Err("nothing is sliced yet: slice the design first".into()) }
+}
+
+/// Upload and Print: a slice of the design as it is now, and a printer to send it to.
+fn can_send(s: &Session) -> std::result::Result<(), String> {
+    match s.print_slice() {
+        None => return Err("nothing is sliced yet: slice the design first".into()),
+        Some(held) if held.stale(&s.doc) => return Err("the design changed since the last slice: slice it again".into()),
+        Some(_) => {}
+    }
+    if s.printer_host().is_none() {
+        return Err("no printer is set up: add its Moonraker address in the Device tab".into());
+    }
+    Ok(())
+}
+
+/// Print: the upload with `start` always true, its reply built from [`StartResult`].
+fn start(s: &mut Session, p: &Value) -> Result<Value> {
+    let (job, name, bytes) = send(s, p, true, START)?;
+    serde_json::to_value(StartResult { job, name, bytes: bytes as u64, start: true, param_warnings: Vec::new() })
+        .map_err(|e| EngineError::Other(format!("{START}: {e}")))
+}
+
+/// Sends the held slice's G-code to the printer under `name` (default: the design's name):
+/// the upload job, the file name and its size in bytes.
+fn send(s: &mut Session, p: &Value, start: bool, cmd: &str) -> Result<(u64, String, usize)> {
+    let held = held(s, cmd)?;
+    if held.stale(&s.doc) {
+        return Err(bad(cmd, "the design changed since the last slice; slice it again before uploading"));
+    }
     let name = match p.get("name") {
         None | Some(Value::Null) => gcode_file_name(&s.doc.name),
         Some(Value::String(n)) => gcode_file_name(n),
-        Some(_) => return Err(bad(UPLOAD, "`name` must be a file name")),
+        Some(_) => return Err(bad(cmd, "`name` must be a file name")),
     };
     let bytes = held.sliced.gcode.len();
     let gcode = held.sliced.gcode.clone();
-    let job = host(s, UPLOAD)?.upload(&name, gcode, start).map_err(|e| EngineError::Other(format!("{UPLOAD}: {e}")))?;
-    Ok(json!({"job": job, "name": name, "bytes": bytes, "start": start}))
+    let job = host(s, cmd)?.upload(&name, gcode, start).map_err(|e| EngineError::Other(format!("{cmd}: {e}")))?;
+    Ok((job, name, bytes))
 }
 
 fn job(s: &mut Session, p: &Value) -> Result<Value> {

@@ -1543,7 +1543,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
         // The Sketch exit group follows the last sketch panel, and is always kept room for so it
         // stays reachable at every width; when panels go into the » menu it moves to the far right.
         let finish_plan =
-            sizes.last().and_then(|size| if tab == "SKETCH" || (tab == "MODEL" && editing_in_place) { Some(Plan::full(size)) } else { None });
+            sizes.last().and_then(|size| if tab == "SKETCH" || (tab == "MODEL" && editing_in_place) || crate::print_workspace::is_tab(&tab) { Some(Plan::full(size)) } else { None });
         let finish_width = finish_plan.as_ref().map_or(0.0, |p| p.width().max(80.0));
         // The Finish group keeps its own gap before it, so the panels on its left give up room
         // (collapse) before they would touch it.
@@ -1570,9 +1570,12 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
             let collapsed = plan.fit == Fit::Collapsed || (shown.is_empty() && !cmds.is_empty());
             let trimmed = plan.shown < plan.widths.len();
             let finish = (tab == "SKETCH" && *panel == "FINISH SKETCH") || (tab == "MODEL" && *panel == "FINISH EDITING");
-            let pinned = finish;
+            // Print's Slice and Print stand at the right end of every Print tab, so they are in the same
+            // place whichever tab is open; Finish moves there only when panels go into the » menu.
+            let print_actions = crate::print_workspace::is_tab(&tab) && *panel == "PRINT";
+            let pinned = finish || print_actions;
             let width = if pinned { finish_width } else { plan.width() };
-            if pinned && finish_right {
+            if pinned && (finish_right || print_actions) {
                 px = right - finish_width;
                 painter.line_segment([pos2(px, top), pos2(px, r.bottom() - 1.0)], t.tertiary_border(t.border));
             }
