@@ -28,6 +28,11 @@ Most bundled assets are drawn in code or contributed originally; third-party fon
 for sketch text, BIZ UDPGothic for web Japanese display) are licensed under SIL OFL 1.1. The
 per-file list is in ATTRIBUTION.md.
 
+Slicing for 3D printing (the Print workspace) builds on sx-core, the SlicerX engine
+(https://github.com/slicerx-oss/slicerx), licensed under the Apache License 2.0 and used as a
+library; its licence and NOTICE are included in THIRD-PARTY-LICENSES.txt. Made possible by SlicerX:
+https://slicerx.app/support
+
 SolidCraft is an independent project and is not affiliated with, sponsored by or endorsed by
 Autodesk, Dassault Systèmes, PTC, Siemens, Blender or any other CAD vendor. Fusion, AutoCAD,
 Inventor, Alias and Tinkercad are trademarks of Autodesk, Inc.; SolidWorks is a trademark of
