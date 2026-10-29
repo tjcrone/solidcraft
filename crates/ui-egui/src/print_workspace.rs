@@ -624,7 +624,6 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 });
             });
         });
-    confirm_print(app, ui.ctx());
 }
 
 /// Prepare: the profiles, where the part sits on the bed, and the Slice button.
@@ -684,7 +683,7 @@ fn slice_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
 }
 
 /// The "start printing?" question, open from Upload and print.
-fn confirm_print(app: &mut SolveApp, ctx: &egui::Context) {
+pub(crate) fn confirm_print(app: &mut SolveApp, ctx: &egui::Context) {
     if !app.print_workspace.confirm_print {
         return;
     }
