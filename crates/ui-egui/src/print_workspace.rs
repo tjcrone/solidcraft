@@ -938,6 +938,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         let ppp = ui.ctx().pixels_per_point();
         let slot = app.print_workspace.slot.clone();
         let callback = ViewportCallback(Frame {
+            product_lights: None,
             product: true,
             key,
             slot: slot.clone(),
@@ -955,6 +956,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             clip: [0.0; 4],
             cap: [0.0; 4],
             images: Vec::new(),
+            points: Vec::new(),
             analysis: [0.0; 8],
             analysis_colors: [0.0; 36],
             access: None,
