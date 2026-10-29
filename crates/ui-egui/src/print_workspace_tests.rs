@@ -77,8 +77,14 @@ fn placements_of(scene: &GpuScene, which: impl Fn(&crate::gpu::InstancedMesh) ->
     scene.instanced.iter().filter(|m| which(m)).map(|m| m.instances.len() / crate::gpu::INSTANCE_SIZE).sum()
 }
 
+/// The scene of the first `shown` layers, built as the canvas builds it.
+fn toolpath_scene(h: &HeldSlice, travels: bool, shown: usize) -> Result<(GpuScene, Detail), String> {
+    let layered = Layered::build(h, travels)?;
+    Ok((layered.shown(shown), layered.detail))
+}
+
 fn scene_of(h: &HeldSlice, travels: bool) -> (GpuScene, Detail) {
-    toolpath_scene(h, travels).unwrap_or_else(|e| panic!("{e}"))
+    toolpath_scene(h, travels, usize::MAX).unwrap_or_else(|e| panic!("{e}"))
 }
 
 fn one_layer(points: Vec<[f32; 2]>) -> HeldSlice {
@@ -246,3 +252,27 @@ fn the_view_moves_by_the_change_in_placement() {
     assert_eq!((between.x, between.y, between.z), (2.0, -8.0, 1.0));
 }
 
+
+#[test]
+fn the_layer_slider_leaves_the_layers_above_out_whole() {
+    // Three layers, one path of two segments each: showing two draws the first two layers' pieces
+    // and nothing of the third, so no cut through it can leave a sliver of it behind.
+    let h = held(3, 1, 3);
+    let tops = |shown: usize| {
+        let (scene, _) = toolpath_scene(&h, true, shown).unwrap_or_else(|e| panic!("{e}"));
+        let mut tops: Vec<f32> = Vec::new();
+        for mesh in &scene.instanced {
+            for one in mesh.instances.as_chunks::<{ crate::gpu::INSTANCE_SIZE }>().0 {
+                tops.push(f32::from_le_bytes([one[44], one[45], one[46], one[47]]));
+            }
+        }
+        (placements(&scene), tops, scene.lines.len())
+    };
+    let z: Vec<f32> = h.sliced.toolpaths.layers.iter().map(|l| l.z).collect();
+    let (all, _, _) = tops(usize::MAX);
+    let (two, top_two, travel_two) = tops(2);
+    assert_eq!(two * 3, all * 2);
+    assert!(top_two.iter().all(|t| (t - z[0]).abs() < 1e-6 || (t - z[1]).abs() < 1e-6), "{top_two:?}");
+    // One path per layer: no travel moves within a layer, in either case.
+    assert_eq!(travel_two, 0);
+}
