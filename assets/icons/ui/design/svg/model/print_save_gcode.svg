@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Save G-code — save the sliced job as a file on this computer</title>
+  <path d="M13.5 6L38 6L45 13L45 51.5Q45 56 40.5 56L13.5 56Q9 56 9 51.5L9 10.5Q9 6 13.5 6Z" fill="#e2e8ef" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M38 6L38 11.5Q38 13 39.5 13L45 13Z" fill="#b8c3cf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M16 20L37 20A4 4 0 0 1 37 28L16 28A4 4 0 0 0 16 36L37 36" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="46.5" cy="47.5" r="14" fill="#ffffff"/>
+  <circle cx="46.5" cy="47.5" r="12" fill="#236ead"/>
+  <path d="M46.5 41.5L46.5 53M41.5 48.3L46.5 53.3L51.5 48.3" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

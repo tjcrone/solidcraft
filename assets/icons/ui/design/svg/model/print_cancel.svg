@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Cancel Print</title>
+  <circle cx="32" cy="32" r="24" fill="#b8c3cf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M24.5 22L39.5 22A2.5 2.5 0 0 1 42 24.5L42 39.5A2.5 2.5 0 0 1 39.5 42L24.5 42A2.5 2.5 0 0 1 22 39.5L22 24.5A2.5 2.5 0 0 1 24.5 22Z" fill="#ffffff" stroke="#ffffff" stroke-width="6.8" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M24.5 22L39.5 22A2.5 2.5 0 0 1 42 24.5L42 39.5A2.5 2.5 0 0 1 39.5 42L24.5 42A2.5 2.5 0 0 1 22 39.5L22 24.5A2.5 2.5 0 0 1 24.5 22Z" fill="#328bd3" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

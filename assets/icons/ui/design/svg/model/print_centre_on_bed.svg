@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Centre on Bed — move the part to the middle of the build plate</title>
+  <path d="M10 5L54 5A5 5 0 0 1 59 10L59 54A5 5 0 0 1 54 59L10 59A5 5 0 0 1 5 54L5 10A5 5 0 0 1 10 5Z" fill="#e2e8ef" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M25.5 23L38.5 23A2.5 2.5 0 0 1 41 25.5L41 38.5A2.5 2.5 0 0 1 38.5 41L25.5 41A2.5 2.5 0 0 1 23 38.5L23 25.5A2.5 2.5 0 0 1 25.5 23Z" fill="#328bd3" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M11 32L14.5 32" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M19.5 32L13.5 36L13.5 28Z" fill="#236ead"/>
+  <path d="M53 32L49.5 32" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M44.5 32L50.5 28L50.5 36Z" fill="#236ead"/>
+  <path d="M32 11L32 14.5" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 19.5L28 13.5L36 13.5Z" fill="#236ead"/>
+  <path d="M32 53L32 49.5" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 44.5L36 50.5L28 50.5Z" fill="#236ead"/>
+</svg>

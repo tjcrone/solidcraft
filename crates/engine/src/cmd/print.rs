@@ -44,16 +44,16 @@ const MAX_BED_C: f64 = 150.0;
 const MAX_PREVIEW_POINTS: usize = 2_000_000;
 
 pub static COMMANDS: &[CommandSpec] = &[
-    CommandSpec::new(SLICE, "Slice", slice).noundo().at("PREPARE", "PRINT").icon("mesh_export").params(
+    CommandSpec::new(SLICE, "Slice", slice).noundo().at("PREPARE", "PRINT").icon("print_slice").params(
         "check?: true only answers whether the held slice already matches this request → current: bool; path?: a .gcode file to write as well; config?: path, or [paths], of JSON files of OrcaSlicer setting keys (printer, filament and process; no key may appear in two files; keys left out keep the slicer's defaults); settings?: {key: value} laid over the files' and the design's own overrides (print.settings.set); bodies?: [names] (default: all) → path?, bytes, layers, segments, time_s, filament_mm, filament_g, slicer, refused: [{key, value, reason}] (settings the slicer could not use and left at their defaults), ignored: [keys the slicer never reads], warnings: [settings lowered to the machine's limits, toolpath findings]. The session keeps the slice for print.preview and print.save; a print that would leave the printer's volume is refused and nothing is kept or written. A request the held slice already answers (same design, settings and bodies) is not sliced again: the held result comes back with reused: true",
     ),
     CommandSpec::new(PREVIEW, "Preview Toolpaths", preview).noundo().doc_only().icon("inspect").params(
         "layer?: index (0 = first) → stale (the design changed since the slice), slicer, layers, segments, time_s, filament_mm, filament_g, bed: [min_x, min_y, max_x, max_y], printable_height, offset: [x, y, z] (plate coordinates = design coordinates + offset; the toolpaths, bounds and bed are plate coordinates, as the G-code is), bounds: {min: [x, y, z], max: [x, y, z]}, file_beads: {count, length_mm} (beads the start and end templates lay on the bed), z: [top of each layer], features: [{feature, label, paths, length_mm}]; with layer: layer: {index, z, height, time_s, paths: [{feature, tool, width_mm, speed_mm_s, points: [[x, y], …]}]}. Needs a print.slice in this session",
     ),
-    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().enabled(has_slice).at("PREVIEW", "OUTPUT").icon("export").params(
+    CommandSpec::new(SAVE, "Save G-code", save).noundo().doc_only().enabled(has_slice).at("PREVIEW", "OUTPUT").icon("print_save_gcode").params(
         "path: the .gcode file to write with the G-code of the session's last print.slice → path, bytes, stale (the design changed since the slice)",
     ),
-    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().enabled(can_send).at("PREVIEW", "OUTPUT").icon("send").params(
+    CommandSpec::new(UPLOAD, "Upload to Printer", upload).noundo().doc_only().enabled(can_send).at("PREVIEW", "OUTPUT").icon("print_upload").params(
         "name?: the file name on the printer (default: the design's name; always ends in .gcode); start?: bool (print it at once; default false) → job, name, bytes, start. Sends the session's last print.slice to the installed printer in the background; print.job reports progress. Refused while the design has changed since the slice, and without a printer",
     ),
     CommandSpec::new(START, "Print", crate::checked!("print.start", start))
@@ -61,7 +61,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .doc_only()
         .enabled(can_send)
         .at("PREVIEW", "PRINT")
-        .icon("send")
+        .icon("print_start")
         .contract(&START_CONTRACT)
         .output(output_schema_for::<StartResult>)
         .params("name?: the file name on the printer (default: the design's name; always ends in .gcode) → job, name, bytes, start: true. Uploads the session's last print.slice to the installed printer and starts printing it (print.upload with start: true); print.job reports progress. Refused while the design has changed since the slice, and without a printer"),
@@ -71,10 +71,10 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(STATUS, "Printer Status", status).noundo().doc_only().icon("inspect").params(
         "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message, timelapse (bool; null without the printer's timelapse plugin). Never waits on the network: the host's latest answer",
     ),
-    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("DEVICE", "JOB").icon("stop").params(
+    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("DEVICE", "JOB").icon("print_cancel").params(
         "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
     ),
-    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("DEVICE", "JOB").icon("pause").params(
+    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("DEVICE", "JOB").icon("print_pause").params(
         "No parameters → job. Asks the printer to pause the running print (Klipper's PAUSE); print.job reports the answer",
     ),
     CommandSpec::new(RESUME, "Resume Print", resume).noundo().doc_only().at("DEVICE", "JOB").icon("play").params(
@@ -96,7 +96,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
     ),
     CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
-    CommandSpec::new(PLACE, "Centre on Bed", place).doc_only().at("PREPARE", "PLACE").icon("move").params(
+    CommandSpec::new(PLACE, "Centre on Bed", place).doc_only().at("PREPARE", "PLACE").icon("print_centre_on_bed").params(
         "x?: mm from the bed's centre; y?: mm; rotation?: degrees about Z, about the design's footprint centre; centre?: true puts it back in the middle, unturned → placement: {x, y, rotation}. Saved in the design; print.slice puts the design there",
     ),
     CommandSpec::new(BED, "Print Bed", bed).noundo().doc_only().icon("inspect").params(

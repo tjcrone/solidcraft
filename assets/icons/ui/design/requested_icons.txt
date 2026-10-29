@@ -175,7 +175,6 @@ path_flange	false
 pattern_circ	false
 pattern_path	false
 pattern_rect	false
-pause	false
 perforate	false
 perspective	false
 pipe	false
@@ -202,7 +201,14 @@ polygon	false
 polygon_circumscribed	false
 polygon_edge	false
 presspull	false
+print_cancel	false
+print_centre_on_bed	false
 print_face	false
+print_pause	false
+print_save_gcode	false
+print_slice	false
+print_start	false
+print_upload	false
 project	false
 project_surface	false
 rack_pinion	false
@@ -275,7 +281,6 @@ star	false
 status_error	false
 status_pin	false
 status_recovery	false
-stop	false
 style	false
 style_hidden_edges	false
 style_shaded	false
