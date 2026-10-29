@@ -177,16 +177,22 @@ fn a_join_sits_at_its_corner_and_fills_the_outside_of_the_turn() {
 }
 
 #[test]
-fn a_gentle_turn_leaves_out_a_join_nobody_would_see() {
-    // 0.42 mm wide: a join is drawn once the outside gap, half the width times the angle, reaches
-    // JOIN_GAP. One degree stays under it, ten degrees does not.
+fn every_corner_that_turns_gets_a_join_however_gentle() {
+    // A chord of a fine curve turns a degree or so: left open, its outside gap shows as a dark seam
+    // across the bead up close. Only a step straight on (under STRAIGHT_ON) goes without.
     let turned = |degrees: f32| {
         let (s, c) = degrees.to_radians().sin_cos();
         one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0 + 10.0 * c, 10.0 * s]])
     };
-    assert_eq!(placements(&scene_of(&turned(1.0), false).0), 4);
-    assert_eq!(placements(&scene_of(&turned(10.0), false).0), 5);
-    assert!(!join_wanted(0.21, 1f32.to_radians()) && join_wanted(0.21, 10f32.to_radians()));
+    assert_eq!(placements(&scene_of(&turned(1.0), false).0), 5);
+    assert_eq!(placements(&scene_of(&turned(0.001), false).0), 4);
+    assert!(join_wanted(1f32.to_radians()) && !join_wanted(0.001f32.to_radians()));
+    // A quarter degree turns with its own fan, not one rounded up to a whole degree: turning left,
+    // the fan is on the right (-y) and reaches ahead (+x) only as far as the turn sweeps the side.
+    let (scene, _) = scene_of(&turned(0.25), false);
+    let fan = scene.instanced.iter().find(|m| !is_run(m) && m.tris.bounds[1][0] > 0.0 && m.tris.bounds[0][1] < -0.1).map(|m| m.tris.bounds);
+    let reach = fan.unwrap_or_else(|| panic!("no fan"))[1][0];
+    assert!(reach < 0.21 * 0.5f32.to_radians(), "the fan reaches {reach} mm ahead, more than a half-degree turn would");
 }
 
 #[test]
