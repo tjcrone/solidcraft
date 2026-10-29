@@ -2422,7 +2422,6 @@
   "print.confirm_print_body": "{name} will start printing on {printer} as soon as it arrives. Is the printer ready?",
   "print.confirm_print_ok": "Print",
   "print.confirm_print_title": "Start printing?",
-  "print.done": "Done",
   "print.enabled": "On",
   "print.estimate": "Estimate",
   "print.extruder": "Nozzle",

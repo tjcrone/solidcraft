@@ -2422,7 +2422,6 @@
   "print.confirm_print_body": "{name} は {printer} に届き次第、印刷を開始します。プリンターの準備はできていますか？",
   "print.confirm_print_ok": "印刷",
   "print.confirm_print_title": "印刷を開始しますか？",
-  "print.done": "完了",
   "print.enabled": "オン",
   "print.estimate": "見積もり",
   "print.extruder": "ノズル",

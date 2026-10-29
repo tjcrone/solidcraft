@@ -2422,7 +2422,6 @@
   "print.confirm_print_body": "{name} 到达 {printer} 后将立即开始打印。打印机准备好了吗？",
   "print.confirm_print_ok": "打印",
   "print.confirm_print_title": "开始打印？",
-  "print.done": "完成",
   "print.enabled": "开",
   "print.estimate": "估算",
   "print.extruder": "喷嘴",
