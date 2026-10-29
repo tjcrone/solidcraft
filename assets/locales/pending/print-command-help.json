@@ -1,0 +1,32 @@
+{
+  "en": {
+    "help.print.cancel": "Stops the print running on the printer; it cannot be resumed. Use it when a print has failed or was started by mistake.",
+    "help.print.pause": "Pauses the print running on the printer. Use it to change filament or check the part, then resume.",
+    "help.print.place": "Puts the design in the middle of the bed, or moves and turns it there. Use it before slicing to choose where on the bed the part prints.",
+    "help.print.resume": "Continues a paused print from where it stopped. Use it after a pause once the printer is ready again.",
+    "help.print.save": "Writes the last slice as a G-code file. Use it to keep the file or to print it from a card or another program.",
+    "help.print.settings.set": "Opens the print settings this design uses, laid over the printer, filament and process files. Use it to change a setting, such as layer height or infill, for this design only.",
+    "help.print.slice": "Turns the design into layers and toolpaths for the printer and shows them in the preview. Use it before saving or uploading, and again after changing the design or its settings.",
+    "help.print.upload": "Sends the last slice to the printer, and can start printing it. Use it to print the design without carrying the file over."
+  },
+  "ja": {
+    "help.print.cancel": "プリンターで実行中の印刷を中止します。再開はできません。印刷が失敗したときや、誤って開始したときに使います。",
+    "help.print.pause": "プリンターで実行中の印刷を一時停止します。フィラメントの交換やパーツの確認に使い、その後で再開します。",
+    "help.print.place": "デザインをベッドの中央に置くか、ベッド上で移動・回転します。スライスの前に、パーツをベッドのどこに印刷するか決めるときに使います。",
+    "help.print.resume": "一時停止した印刷を、止めたところから続けます。一時停止のあと、プリンターの準備ができたら使います。",
+    "help.print.save": "最後のスライスをG-codeファイルに書き出します。ファイルを保存したり、カードや別のプログラムから印刷したりするときに使います。",
+    "help.print.settings.set": "このデザインで使う印刷設定を開きます。プリンター、フィラメント、プロセスの各ファイルの上に重ねて適用されます。積層ピッチやインフィルなどを、このデザインだけ変えるときに使います。",
+    "help.print.slice": "デザインをプリンター用のレイヤーとツールパスに変換し、プレビューに表示します。保存やアップロードの前と、デザインや設定を変えたあとに使います。",
+    "help.print.upload": "最後のスライスをプリンターに送り、そのまま印刷を開始することもできます。ファイルを持ち運ばずにデザインを印刷するときに使います。"
+  },
+  "zh": {
+    "help.print.cancel": "停止打印机上正在进行的打印，之后无法继续。在打印失败或误启动时使用。",
+    "help.print.pause": "暂停打印机上正在进行的打印。用于更换耗材或检查零件，之后再继续。",
+    "help.print.place": "把设计放到热床中央，或在热床上移动和旋转它。在切片前用来决定零件打印在热床的哪个位置。",
+    "help.print.resume": "从暂停处继续打印。在暂停后、打印机重新就绪时使用。",
+    "help.print.save": "把最近一次切片写成 G-code 文件。用于保存文件，或从存储卡或其他程序打印。",
+    "help.print.settings.set": "打开此设计使用的打印设置，它们叠加在打印机、耗材和工艺文件之上。用于只为此设计更改某项设置，例如层高或填充。",
+    "help.print.slice": "把设计转换为打印机使用的层和刀路，并在预览中显示。在保存或上传之前使用，修改设计或设置后要再次切片。",
+    "help.print.upload": "把最近一次切片发送到打印机，也可以直接开始打印。用于无需搬运文件即可打印设计。"
+  }
+}
