@@ -179,7 +179,7 @@ fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_wal
 
 #[test]
 fn feature_ids_round_trip_and_cover_every_feature() {
-    for f in Feature::ALL {
+    for &f in Feature::ALL {
         assert_eq!(Feature::parse(f.id()), Some(f));
         assert!(!f.label().is_empty());
     }
