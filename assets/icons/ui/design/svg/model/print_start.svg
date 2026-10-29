@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Print — send the job and start printing</title>
+  <path d="M8 44L43 44A3 3 0 0 1 46 47L46 48A3 3 0 0 1 43 51L8 51A3 3 0 0 1 5 48L5 47A3 3 0 0 1 8 44Z" fill="#b8c3cf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M23.5 9L36.5 9A2.5 2.5 0 0 1 39 11.5L39 21.5A2.5 2.5 0 0 1 36.5 24L23.5 24A2.5 2.5 0 0 1 21 21.5L21 11.5A2.5 2.5 0 0 1 23.5 9Z" fill="#b8c3cf"/>
+  <path d="M22.3 10.3L37.7 10.3L37.7 14L22.3 14Z" fill="#e2e8ef"/>
+  <path d="M23.5 9L36.5 9A2.5 2.5 0 0 1 39 11.5L39 21.5A2.5 2.5 0 0 1 36.5 24L23.5 24A2.5 2.5 0 0 1 21 21.5L21 11.5A2.5 2.5 0 0 1 23.5 9Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M24 24L36 24L32.2 32L27.8 32Z" fill="#8e9faf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M30 33.6L30 39.6L9.5 39.6" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="47.5" cy="47.5" r="14" fill="#ffffff"/>
+  <circle cx="47.5" cy="47.5" r="12" fill="#236ead"/>
+  <path d="M43.9 41.7L53.3 47.5L43.9 53.3Z" fill="#ffffff" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

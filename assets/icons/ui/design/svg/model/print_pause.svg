@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Pause Print</title>
+  <circle cx="32" cy="32" r="24" fill="#b8c3cf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M23.5 20L26.5 20A2 2 0 0 1 28.5 22L28.5 42A2 2 0 0 1 26.5 44L23.5 44A2 2 0 0 1 21.5 42L21.5 22A2 2 0 0 1 23.5 20Z" fill="#ffffff" stroke="#ffffff" stroke-width="6.8" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M23.5 20L26.5 20A2 2 0 0 1 28.5 22L28.5 42A2 2 0 0 1 26.5 44L23.5 44A2 2 0 0 1 21.5 42L21.5 22A2 2 0 0 1 23.5 20Z" fill="#328bd3" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M37.5 20L40.5 20A2 2 0 0 1 42.5 22L42.5 42A2 2 0 0 1 40.5 44L37.5 44A2 2 0 0 1 35.5 42L35.5 22A2 2 0 0 1 37.5 20Z" fill="#ffffff" stroke="#ffffff" stroke-width="6.8" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M37.5 20L40.5 20A2 2 0 0 1 42.5 22L42.5 42A2 2 0 0 1 40.5 44L37.5 44A2 2 0 0 1 35.5 42L35.5 22A2 2 0 0 1 37.5 20Z" fill="#328bd3" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

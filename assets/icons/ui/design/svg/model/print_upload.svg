@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Upload — send the G-code to the printer without starting it</title>
+  <path d="M13 5L51 5A5 5 0 0 1 56 10L56 39A5 5 0 0 1 51 44L13 44A5 5 0 0 1 8 39L8 10A5 5 0 0 1 13 5Z" fill="#b8c3cf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M15.5 13L48.5 13A2.5 2.5 0 0 1 51 15.5L51 36.5A2.5 2.5 0 0 1 48.5 39L15.5 39A2.5 2.5 0 0 1 13 36.5L13 15.5A2.5 2.5 0 0 1 15.5 13Z" fill="#e2e8ef" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M26 13L38 13L38 19L34.2 24L29.8 24L26 19Z" fill="#8e9faf" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 58L32 36" fill="none" stroke="#ffffff" stroke-width="11.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 27L23 37L41 37Z" fill="#ffffff" stroke="#ffffff" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 58L32 36" fill="none" stroke="#236ead" stroke-width="5.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 27L23 37L41 37Z" fill="#236ead" stroke="#236ead" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>
