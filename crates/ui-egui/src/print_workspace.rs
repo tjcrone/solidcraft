@@ -17,9 +17,33 @@ use crate::gpu::{Frame, GpuScene, PaletteIndex, SceneSlot, ViewportCallback};
 use crate::ui_kit::{Container, Edge, Surface};
 use crate::{SolveApp, theme::Tokens};
 
-/// Bytes of toolpath geometry one preview may upload. Past it the ribbons lose their sides, then
-/// become lines, so a big print still shows.
-const MAX_GEOMETRY_BYTES: usize = 128 * 1024 * 1024;
+/// What the graphics device lets one preview upload: `total` bytes in all (Render's budget for
+/// the device), and at most `buffer` bytes of any one bead piece's placements, which go to the
+/// device as one buffer. Before a device is known: the web budget, which every device allows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Budget {
+    total: usize,
+    buffer: usize,
+}
+
+impl Budget {
+    pub(crate) fn of(max_buffer_size: u64, web: bool) -> Budget {
+        let total = crate::render_workspace::geometry_budget(max_buffer_size, web);
+        let as_usize = |v: u64| usize::try_from(v).unwrap_or(usize::MAX);
+        Budget { total: as_usize(total), buffer: as_usize(max_buffer_size.min(total)) }
+    }
+}
+
+impl Default for Budget {
+    fn default() -> Budget {
+        Budget::of(128 * 1024 * 1024, true)
+    }
+}
+
+fn mib(bytes: usize) -> f64 {
+    bytes as f64 / 1_048_576.0
+}
+
 const TRI_BYTES: usize = 3 * crate::gpu::TRI_SIZE;
 const LINE_BYTES: usize = crate::gpu::LINE_SIZE;
 
@@ -62,8 +86,8 @@ pub struct State {
     bed: Option<BedInfo>,
     /// A drag of the part across the bed in Prepare.
     drag: Option<Drag>,
-    /// The bead detail the preview's toolpaths were last drawn at.
-    detail: Option<Detail>,
+    /// What the graphics device allows the preview (`set_device`).
+    budget: Budget,
     /// The toolpaths of every layer, and the slice and travel setting they were built for. The
     /// slice itself is kept, so a new one can never take its address and pass for it.
     layered: Option<(Arc<HeldSlice>, bool, Arc<Layered>)>,
@@ -203,7 +227,7 @@ impl Default for State {
             uploaded: None,
             bed: None,
             drag: None,
-            detail: None,
+            budget: Budget::default(),
             layered: None,
         }
     }
@@ -809,11 +833,6 @@ fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
         ui.label(format!("{} {} / {n}", app.tr("print.layer"), shown_layer(app, n)));
         ui.small(format!("z {:.2} mm · {:.2} mm · {} · {} segments", layer.z, layer.height, hms(f64::from(layer.time_s)), layer.segments()));
     }
-    // A print past the preview's budget is drawn simpler; say so rather than let it look wrong.
-    if app.print_workspace.detail == Some(Detail::Lines) {
-        let text = app.tr("print.detail_lines").to_string();
-        ui.add(egui::Label::new(egui::RichText::new(text).small().color(Tokens::get().warning)).wrap());
-    }
     let travels_label = app.tr("print.show_travels").to_string();
     crate::ui_kit::checkbox(ui, &travels_label, &mut app.print_workspace.show_travels);
     ui.label(app.tr("print.features"));
@@ -1050,13 +1069,12 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
             let layered = match &app.print_workspace.layered {
                 Some((made_for, with_travels, layered)) if Arc::ptr_eq(made_for, &held) && *with_travels == travels => layered.clone(),
                 _ => {
-                    let layered = Arc::new(Layered::build(&held, travels)?);
+                    let layered = Arc::new(Layered::build(&held, travels, app.print_workspace.budget)?);
                     app.print_workspace.layered = Some((held.clone(), travels, layered.clone()));
                     layered
                 }
             };
             let mut scene = layered.shown(shown);
-            app.print_workspace.detail = Some(layered.detail);
             shell(app, &mut scene, held.sliced.offset);
             scene
         }
@@ -1084,7 +1102,7 @@ fn shell(app: &SolveApp, gpu: &mut GpuScene, offset: [f32; 3]) {
     for body in &scene.meshes {
         for triangle in &body.mesh.triangles {
             bytes += TRI_BYTES;
-            if bytes > MAX_GEOMETRY_BYTES / 4 {
+            if bytes > app.print_workspace.budget.total / 4 {
                 return;
             }
             // A hair inside the surface the beads lie on, so the shell never shares a depth
@@ -1134,8 +1152,8 @@ fn prepared_scene(app: &SolveApp) -> Result<GpuScene, String> {
     for body in &scene.meshes {
         for triangle in &body.mesh.triangles {
             bytes += TRI_BYTES;
-            if bytes > MAX_GEOMETRY_BYTES {
-                return Err("the design is past the preview's geometry budget".into());
+            if bytes > app.print_workspace.budget.total {
+                return Err(format!("The design needs more than the {:.0} MiB of geometry this graphics device allows a preview.", mib(app.print_workspace.budget.total)));
             }
             for i in *triangle {
                 let p = body.mesh.positions.get(i as usize).ok_or("invalid product triangle")?.to_f32();
@@ -1178,11 +1196,8 @@ impl Cost {
         cost
     }
 
-    fn bytes(&self, detail: Detail) -> usize {
-        match detail {
-            Detail::Beads => (self.segments + self.joins + self.caps).saturating_mul(crate::gpu::INSTANCE_SIZE),
-            Detail::Lines => self.segments.saturating_mul(LINE_BYTES),
-        }
+    fn bytes(&self) -> usize {
+        self.segments.saturating_add(self.joins).saturating_add(self.caps).saturating_mul(crate::gpu::INSTANCE_SIZE)
     }
 }
 
@@ -1197,34 +1212,33 @@ struct Layered {
     base: GpuScene,
     /// The shared pieces with every layer's placements, in layer order.
     meshes: Vec<crate::gpu::InstancedMesh>,
-    /// Every layer's lines (travel moves, or the beads as lines), in layer order.
+    /// Every layer's travel moves, in layer order.
     lines: Vec<u8>,
     /// After each layer: the bytes of each piece's placements (by its index in `meshes`; a piece
     /// first placed later has none yet) and of the lines.
     ends: Vec<(Vec<usize>, usize)>,
-    detail: Detail,
 }
 
 impl Layered {
-    fn build(held: &HeldSlice, travels: bool) -> Result<Layered, String> {
+    fn build(held: &HeldSlice, travels: bool, budget: Budget) -> Result<Layered, String> {
         let paths: &Toolpaths = &held.sliced.toolpaths;
         let travel_count: usize = paths.layers.iter().map(|l| l.paths.len().saturating_sub(1)).sum();
         let travel_bytes = if travels { travel_count * LINE_BYTES } else { 0 };
         let cost = Cost::of(paths);
-        let detail = [Detail::Beads, Detail::Lines]
-            .into_iter()
-            .find(|d| cost.bytes(*d).saturating_add(travel_bytes) <= MAX_GEOMETRY_BYTES)
-            .ok_or_else(|| format!("{} segments are past the preview's geometry budget", cost.segments))?;
+        let bytes = cost.bytes().saturating_add(travel_bytes);
+        if bytes > budget.total {
+            return Err(too_large(bytes, budget.total));
+        }
         let mut gpu = GpuScene::default();
         let mut inst = Instancer::default();
         bed(&mut gpu, held.sliced.bed);
         let first_height = paths.layers.first().map_or(0.2, |l| l.height);
         for bead in &paths.file_beads {
-            file_bead(&mut gpu, &mut inst, bead, first_height, detail);
+            file_bead(&mut inst, bead, first_height, gpu.color(FILE_BEAD_COLOR));
         }
         let mut ends = Vec::with_capacity(paths.layers.len());
         for layer in &paths.layers {
-            layer_beads(&mut gpu, &mut inst, layer, detail);
+            layer_beads(&mut gpu, &mut inst, layer);
             if travels {
                 // A little above the beads, so the line never fights with the top faces.
                 let z = layer.z + TRAVEL_LIFT;
@@ -1235,8 +1249,14 @@ impl Layered {
             }
             ends.push((inst.meshes.iter().map(|m| m.instances.len()).collect(), gpu.lines.len()));
         }
+        // Each piece's placements go to the device as one buffer.
+        if let Some(largest) = inst.meshes.iter().map(|m| m.instances.len()).max()
+            && largest > budget.buffer
+        {
+            return Err(too_large(largest, budget.buffer));
+        }
         let lines = std::mem::take(&mut gpu.lines);
-        Ok(Layered { base: gpu, meshes: inst.meshes, lines, ends, detail })
+        Ok(Layered { base: gpu, meshes: inst.meshes, lines, ends })
     }
 
     /// The scene of the first `shown` layers (all of them past the last).
@@ -1434,12 +1454,18 @@ const TRAVEL_LIFT: f32 = 0.05;
 /// Widest turn one join step spans; sharper corners get more steps so the fan stays round.
 const JOIN_STEP: f32 = std::f32::consts::FRAC_PI_4;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Detail {
-    /// The full profile.
-    Beads,
-    /// One line per straight run, for a print past the budget even as placements.
-    Lines,
+/// Size the preview's budget to the graphics device the app made.
+pub(crate) fn set_device(app: &mut SolveApp, max_buffer_size: u64, web: bool) {
+    let budget = Budget::of(max_buffer_size, web);
+    if app.print_workspace.budget != budget {
+        app.print_workspace.budget = budget;
+        app.print_workspace.layered = None;
+        app.print_workspace.uploaded = None;
+    }
+}
+
+fn too_large(bytes: usize, limit: usize) -> String {
+    format!("This print is too large to preview: it needs {:.0} MiB of geometry, and this graphics device allows {:.0} MiB.", mib(bytes), mib(limit))
 }
 
 /// The bead's cross-section: a ring of points in (sideways, height) about the path, going
@@ -1557,20 +1583,12 @@ fn direction(a: [f32; 2], b: [f32; 2]) -> Option<([f32; 2], [f32; 2])> {
     (len > 1e-6).then(|| ([dx / len, dy / len], [-dy / len, dx / len]))
 }
 
-fn layer_beads(gpu: &mut GpuScene, inst: &mut Instancer, layer: &Layer, detail: Detail) {
+fn layer_beads(gpu: &mut GpuScene, inst: &mut Instancer, layer: &Layer) {
     let top = layer.z;
     let bottom = (layer.z - layer.height).max(0.0);
     for path in &layer.paths {
         let c = gpu.color(feature_color(path.feature));
         let half = bead_half(path.width_mm);
-        if detail == Detail::Lines {
-            for w in path.points.windows(2) {
-                if direction(w[0], w[1]).is_some() {
-                    gpu.line([w[0][0], w[0][1], top], [w[1][0], w[1][1], top], c, 1.5, false);
-                }
-            }
-            continue;
-        }
         bead_path(inst, &Profile::new(top, bottom, half, false), &path.points, c);
     }
 }
@@ -1604,17 +1622,8 @@ fn bead_path(inst: &mut Instancer, prof: &Profile, pts: &[[f32; 2]], c: PaletteI
 
 /// A bead the start or end template lays (the purge line): drawn as the layers' beads are, in
 /// runs of points at one height, each with its corners and ends.
-fn file_bead(gpu: &mut GpuScene, inst: &mut Instancer, bead: &solidcraft_engine::print::FileBead, first_height: f32, detail: Detail) {
-    let c = gpu.color(FILE_BEAD_COLOR);
+fn file_bead(inst: &mut Instancer, bead: &solidcraft_engine::print::FileBead, first_height: f32, c: PaletteIndex) {
     let half = bead_half(bead.width_mm);
-    if detail == Detail::Lines {
-        for w in bead.points.windows(2) {
-            if direction([w[0][0], w[0][1]], [w[1][0], w[1][1]]).is_some() {
-                gpu.line(w[0], w[1], c, 1.5, false);
-            }
-        }
-        return;
-    }
     let mut run: Vec<[f32; 2]> = Vec::new();
     let mut run_z: Option<f32> = None;
     let flush = |inst: &mut Instancer, run: &mut Vec<[f32; 2]>, z: f32| {
@@ -1747,3 +1756,4 @@ mod job_tests {
         assert_eq!(job_text(JobKind::Heat, "running", "standby", later), ("print.job_running", false));
     }
 }
+
