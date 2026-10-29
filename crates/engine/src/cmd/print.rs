@@ -71,13 +71,13 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new(STATUS, "Printer Status", status).noundo().doc_only().icon("inspect").params(
         "No parameters → installed (a printer is set up), printer: {name, url}, reachable, age_s (since the last good answer), error?, state (standby | printing | paused | complete | cancelled | error), filename, progress (0..1), print_duration_s, extruder: {temperature, target}, bed: {temperature, target}, message, timelapse (bool; null without the printer's timelapse plugin). Never waits on the network: the host's latest answer",
     ),
-    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().at("DEVICE", "JOB").icon("print_cancel").params(
+    CommandSpec::new(CANCEL, "Cancel Print", cancel).noundo().doc_only().enabled(can_cancel).at("DEVICE", "JOB").icon("print_cancel").params(
         "No parameters → job. Asks the printer to cancel the running print; print.job reports the answer",
     ),
-    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().at("DEVICE", "JOB").icon("print_pause").params(
+    CommandSpec::new(PAUSE, "Pause Print", pause).noundo().doc_only().enabled(can_pause).at("DEVICE", "JOB").icon("print_pause").params(
         "No parameters → job. Asks the printer to pause the running print (Klipper's PAUSE); print.job reports the answer",
     ),
-    CommandSpec::new(RESUME, "Resume Print", resume).noundo().doc_only().at("DEVICE", "JOB").icon("play").params(
+    CommandSpec::new(RESUME, "Resume Print", resume).noundo().doc_only().enabled(can_resume).at("DEVICE", "JOB").icon("play").params(
         "No parameters → job. Asks the printer to resume a paused print (Klipper's RESUME); print.job reports the answer",
     ),
     CommandSpec::new(HEAT, "Set Temperatures", heat).noundo().doc_only().icon("settings").params(
@@ -287,6 +287,41 @@ fn can_send(s: &Session) -> std::result::Result<(), String> {
         return Err("no printer is set up: add its Moonraker address in the Device tab".into());
     }
     Ok(())
+}
+
+/// What the printer says it is doing (`printing`, `paused`, `standby`…), from its last status;
+/// an error when there is no printer or it cannot be reached.
+fn printer_state(s: &Session) -> std::result::Result<String, String> {
+    let host = s.printer_host().ok_or("no printer is set up: add its Moonraker address in the Device tab")?;
+    let status = host.status();
+    if !status.reachable {
+        return Err("the printer cannot be reached".into());
+    }
+    Ok(status.state)
+}
+
+/// Pause Print: the printer is printing.
+fn can_pause(s: &Session) -> std::result::Result<(), String> {
+    match printer_state(s)?.as_str() {
+        "printing" => Ok(()),
+        other => Err(format!("the printer is not printing ({other})")),
+    }
+}
+
+/// Resume Print: the printer is paused.
+fn can_resume(s: &Session) -> std::result::Result<(), String> {
+    match printer_state(s)?.as_str() {
+        "paused" => Ok(()),
+        other => Err(format!("the printer is not paused ({other})")),
+    }
+}
+
+/// Cancel Print: the printer is printing or paused.
+fn can_cancel(s: &Session) -> std::result::Result<(), String> {
+    match printer_state(s)?.as_str() {
+        "printing" | "paused" => Ok(()),
+        other => Err(format!("the printer has no print to cancel ({other})")),
+    }
 }
 
 /// Print: the upload with `start` always true, its reply built from [`StartResult`].
