@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Slice — cut the design into print layers</title>
+  <path d="M8.32 24.32L52.2 33.54L52.2 57L8.32 47.78Z" fill="#b8c3cf"/>
+  <path d="M54.99 24.8A46.68 26.95 0 0 1 52.2 33.54L52.2 57A46.68 26.95 0 0 0 54.99 48.25Z" fill="#8e9faf"/>
+  <path d="M8.32 24.32L44.09 7A46.68 26.95 0 0 1 52.2 33.54Z" fill="#e2e8ef"/>
+  <path d="M44.09 7A46.68 26.95 0 0 1 52.2 33.54L43.76 31.77A37.71 21.77 0 0 0 37.2 10.33Z" fill="#b8c3cf"/>
+  <path d="M37.2 10.33A37.71 21.77 0 0 1 43.76 31.77" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M8.32 24.32L52.2 33.54L52.2 57L8.32 47.78Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M54.99 24.8A46.68 26.95 0 0 1 52.2 33.54L52.2 57A46.68 26.95 0 0 0 54.99 48.25Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M8.32 24.32L44.09 7A46.68 26.95 0 0 1 52.2 33.54Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M13.72 37.19L52.2 45.27" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M54.82 38.4A46.68 26.95 0 0 1 52.2 45.27" fill="none" stroke="#236ead" stroke-width="4.25" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>
