@@ -95,6 +95,7 @@ pub mod parameters;
 pub mod parts;
 pub mod plastic;
 pub mod point_cloud;
+pub mod print;
 pub mod print_face;
 pub mod render;
 pub mod render_bindings;

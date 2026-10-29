@@ -382,6 +382,9 @@ pub struct Row<'a> {
     /// The last group leaves the mode (Finish): room is always kept for it, it never collapses,
     /// and it moves to the far right when groups go into the » menu.
     pub exit: bool,
+    /// The last group keeps its room like the exit group but always stands at the far right, so
+    /// it is in the same place on every tab that has it; it is drawn as an ordinary group.
+    pub keep_last_right: bool,
     /// The command the search points out.
     pub reveal: Option<Reveal<'a>>,
     /// The » button's hover text.
@@ -614,7 +617,7 @@ pub fn show(ui: &mut egui::Ui, row: &Row, rect: Rect, more_rows: &mut dyn FnMut(
     // The exit group follows the last group and always keeps its room, so it stays reachable at
     // every width; when groups go into the » menu it moves to the far right, with a gap of its
     // own before it so the groups on its left collapse before they would touch it.
-    let exit_plan = sizes.last().filter(|_| row.exit).map(Plan::full);
+    let exit_plan = sizes.last().filter(|_| row.exit || row.keep_last_right).map(Plan::full);
     let exit_width = exit_plan.as_ref().map_or(0.0, |p| p.width().max(80.0));
     let exit_gap = if exit_plan.is_some() { 4.0 } else { 0.0 };
     let normal = sizes.len().saturating_sub(usize::from(exit_plan.is_some()));
@@ -640,8 +643,9 @@ pub fn show(ui: &mut egui::Ui, row: &Row, rect: Rect, more_rows: &mut dyn FnMut(
         let collapsed = plan.fit == Fit::Collapsed || (group.buttons.is_empty() && group.cells.is_empty() && !group.commands.is_empty());
         let trimmed = plan.shown < plan.widths.len();
         let exit = row.exit && gi + 1 == row.groups.len();
-        let width = if exit { exit_width } else { plan.width() };
-        if exit && exit_right {
+        let kept = (row.exit || row.keep_last_right) && gi + 1 == row.groups.len();
+        let width = if kept { exit_width } else { plan.width() };
+        if kept && (exit_right || row.keep_last_right) {
             px = right - exit_width;
             painter.line_segment([pos2(px, top), pos2(px, rect.bottom() - 1.0)], t.tertiary_border(t.border));
         }

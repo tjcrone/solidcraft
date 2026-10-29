@@ -1057,6 +1057,9 @@ struct RibbonPanels {
     panels: Vec<Panel>,
     /// The last panel leaves the sketch or the edit.
     exit: bool,
+    /// Print's Slice and Print panel stands at the right end of every Print tab, so it is in the
+    /// same place whichever tab is open.
+    print_actions: bool,
     running: Option<String>,
 }
 
@@ -1169,7 +1172,8 @@ impl RibbonPanels {
         // editing in place).
         let exit = (tab == "SKETCH" || (tab == "MODEL" && editing_in_place))
             && panels.last().is_some_and(|p| matches!(p.panel, "FINISH SKETCH" | "FINISH EDITING"));
-        RibbonPanels { panels, exit, running: if app.preferences.ribbon_reveal { running } else { None } }
+        let print_actions = crate::print_workspace::is_tab(tab) && panels.last().is_some_and(|p| p.panel == "PRINT");
+        RibbonPanels { panels, exit, print_actions, running: if app.preferences.ribbon_reveal { running } else { None } }
     }
 
     fn row<'a>(
@@ -1213,6 +1217,7 @@ impl RibbonPanels {
             labels,
             accent,
             exit: self.exit,
+            keep_last_right: self.print_actions,
             reveal,
             more_tip,
             handles: RIBBON_HANDLES,

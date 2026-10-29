@@ -145,6 +145,7 @@ pub const DOCUMENTED: &[&str] = &[
     "print.save",
     "print.settings.set",
     "print.slice",
+    "print.start",
     "print.upload",
     "sheet.convert",
     "sheet.export_bend_table",
