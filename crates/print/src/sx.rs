@@ -126,23 +126,39 @@ fn toolpaths(out: &api::SliceOutput) -> Toolpaths {
             z: l.z,
             height: l.height,
             time_s: l.time_s,
-            paths: l
-                .paths
-                .iter()
-                .filter_map(|p| {
-                    let points: Vec<[f32; 2]> = l.path_points(p).iter().map(|q| [mm(q.x), mm(q.y)]).collect();
-                    (points.len() >= 2).then(|| Path {
-                        feature: feature(p.feature),
-                        tool: p.tool,
-                        width_mm: p.width_mm,
-                        speed_mm_s: p.speed_mm_s,
-                        points,
-                    })
+            paths: join_touching(l.paths.iter().filter_map(|p| {
+                let raw = l.path_points(p);
+                let (first, last) = (raw.first()?, raw.last()?);
+                let points: Vec<[f32; 2]> = raw.iter().map(|q| [mm(q.x), mm(q.y)]).collect();
+                (points.len() >= 2).then(|| {
+                    let path = Path { feature: feature(p.feature), tool: p.tool, width_mm: p.width_mm, speed_mm_s: p.speed_mm_s, points };
+                    (path, [first.x, first.y], [last.x, last.y])
                 })
-                .collect(),
+            })),
         })
         .collect();
     Toolpaths { layers, file_beads: Vec::new() }
+}
+
+/// One path per continuous extrusion. sx-core hands some extrusions over a piece at a time (the
+/// internal solid infill above all: a zigzag as one path per stroke), each piece starting exactly
+/// where the last ended, with the same feature, tool, width and speed. Joined, a zigzag's turns are
+/// corners of one path rather than ends of many. `pieces` are paths with their first and last
+/// points in the engine's integer units, so "exactly" is exact.
+pub(crate) fn join_touching(pieces: impl IntoIterator<Item = (Path, [i32; 2], [i32; 2])>) -> Vec<Path> {
+    let mut out: Vec<Path> = Vec::new();
+    let mut end: Option<[i32; 2]> = None;
+    for (path, first, last) in pieces {
+        let same = |a: &Path| {
+            a.feature == path.feature && a.tool == path.tool && a.width_mm.to_bits() == path.width_mm.to_bits() && a.speed_mm_s.to_bits() == path.speed_mm_s.to_bits()
+        };
+        match out.last_mut() {
+            Some(previous) if end == Some(first) && same(previous) => previous.points.extend(path.points.iter().skip(1)),
+            _ => out.push(path),
+        }
+        end = Some(last);
+    }
+    out
 }
 
 fn feature(f: api::Feature) -> Option<Feature> {
