@@ -1350,8 +1350,8 @@ struct Instancer {
 #[derive(Hash)]
 enum Piece {
     Run,
-    /// A corner turning this many quarter degrees, to the left or not.
-    Join { quarters: u16, left: bool },
+    /// A corner turning this many degrees (a multiple of [`FAN_STEP_DEGREES`]), to the left or not.
+    Join { degrees: u16, left: bool },
     /// An end facing along the path (`true`, the path's last point) or back along it.
     Cap { forward: bool },
 }
@@ -1389,9 +1389,9 @@ impl Instancer {
         if !join_wanted(angle) {
             return;
         }
-        let quarters = ((angle.to_degrees() * 4.0).round() as u16).clamp(1, 720);
+        let degrees = fan_degrees(angle);
         let left = d0[0] * d1[1] - d0[1] * d1[0] > 0.0;
-        self.place(prof, Piece::Join { quarters, left }, turned(d0, v, prof.top), c);
+        self.place(prof, Piece::Join { degrees, left }, turned(d0, v, prof.top), c);
     }
 
     /// The end of an open bead at `p`, the path going `d` there; `forward` for its last point.
@@ -1420,8 +1420,8 @@ fn piece_tris(prof: &Profile, piece: &Piece) -> Vec<Tri> {
                 quad(&mut out, [p0, p1, p2, p3], prof.face_normal(n, k));
             }
         }
-        Piece::Join { quarters, left } => {
-            let (s, c) = (f32::from(quarters) * 0.25).to_radians().sin_cos();
+        Piece::Join { degrees, left } => {
+            let (s, c) = f32::from(degrees).to_radians().sin_cos();
             join_tris(&mut out, prof, [0.0, 0.0], [1.0, 0.0], [c, if left { s } else { -s }]);
         }
         Piece::Cap { forward } => {
@@ -1632,7 +1632,7 @@ fn layer_beads(gpu: &mut GpuScene, inst: &mut Instancer, layer: &Layer, detail: 
     let bottom = (layer.z - layer.height).max(0.0);
     for path in &layer.paths {
         let c = gpu.color(feature_color(path.feature));
-        let half = (path.width_mm * 0.5).max(0.05);
+        let half = bead_half(path.width_mm);
         if detail == Detail::Lines {
             for w in path.points.windows(2) {
                 if direction(w[0], w[1]).is_some() {
@@ -1676,7 +1676,7 @@ fn bead_path(inst: &mut Instancer, prof: &Profile, pts: &[[f32; 2]], c: PaletteI
 /// runs of points at one height, each with its corners and ends.
 fn file_bead(gpu: &mut GpuScene, inst: &mut Instancer, bead: &solidcraft_engine::print::FileBead, first_height: f32, detail: Detail) {
     let c = gpu.color(FILE_BEAD_COLOR);
-    let half = (bead.width_mm * 0.5).max(0.05);
+    let half = bead_half(bead.width_mm);
     if detail == Detail::Lines {
         for w in bead.points.windows(2) {
             if direction([w[0][0], w[0][1]], [w[1][0], w[1][1]]).is_some() {
@@ -1723,6 +1723,28 @@ fn turn(d0: [f32; 2], d1: [f32; 2]) -> f32 {
 fn join_wanted(angle: f32) -> bool {
     angle.is_finite() && angle >= STRAIGHT_ON
 }
+
+/// The fan for a corner turning `angle`, in whole degrees: rounded up to a multiple of
+/// [`FAN_STEP_DEGREES`]. A fan that turns too far is hidden: past the true turn it lies within
+/// the bead's half width of the next run's centre line, inside that run's bead. Rounding up keeps
+/// the outside of every turn covered, and the steps keep the shared fans few.
+fn fan_degrees(angle: f32) -> u16 {
+    let step = f32::from(FAN_STEP_DEGREES);
+    ((angle.to_degrees() / step).ceil() as u16 * FAN_STEP_DEGREES).clamp(FAN_STEP_DEGREES, 180)
+}
+
+/// The fans' angle step, degrees.
+const FAN_STEP_DEGREES: u16 = 2;
+
+/// Half a bead `width` wide, the width rounded to [`WIDTH_STEP`] so beads of nearly one width
+/// share their pieces (gap fill and internal solid infill vary their widths continuously, and
+/// one shared piece per width costs the GPU a buffer each).
+fn bead_half(width: f32) -> f32 {
+    ((width / WIDTH_STEP).round() * WIDTH_STEP * 0.5).max(0.05)
+}
+
+/// The step bead widths are rounded to, mm: a bead is drawn at most half of it off its width.
+const WIDTH_STEP: f32 = 0.01;
 
 /// A turn this small (radians) is a straight run on: about 0.006°.
 const STRAIGHT_ON: f32 = 1e-4;

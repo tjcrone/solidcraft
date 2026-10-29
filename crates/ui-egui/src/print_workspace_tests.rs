@@ -187,12 +187,16 @@ fn every_corner_that_turns_gets_a_join_however_gentle() {
     assert_eq!(placements(&scene_of(&turned(1.0), false).0), 5);
     assert_eq!(placements(&scene_of(&turned(0.001), false).0), 4);
     assert!(join_wanted(1f32.to_radians()) && !join_wanted(0.001f32.to_radians()));
-    // A quarter degree turns with its own fan, not one rounded up to a whole degree: turning left,
-    // the fan is on the right (-y) and reaches ahead (+x) only as far as the turn sweeps the side.
+    // A quarter-degree turn takes the smallest fan, FAN_STEP_DEGREES: rounded up, it covers the
+    // whole outside of the turn, and what it sweeps past it lies inside the next run's bead.
     let (scene, _) = scene_of(&turned(0.25), false);
     let fan = scene.instanced.iter().find(|m| !is_run(m) && m.tris.bounds[1][0] > 0.0 && m.tris.bounds[0][1] < -0.1).map(|m| m.tris.bounds);
     let reach = fan.unwrap_or_else(|| panic!("no fan"))[1][0];
-    assert!(reach < 0.21 * 0.5f32.to_radians(), "the fan reaches {reach} mm ahead, more than a half-degree turn would");
+    let step = f32::from(FAN_STEP_DEGREES).to_radians();
+    assert!((reach - 0.21 * step.sin()).abs() < 1e-4, "the fan reaches {reach} mm ahead");
+    assert_eq!(fan_degrees(0.25f32.to_radians()), FAN_STEP_DEGREES);
+    assert_eq!(fan_degrees(3.0f32.to_radians()), 4);
+    assert_eq!(fan_degrees(180.0f32.to_radians()), 180);
 }
 
 #[test]
@@ -281,4 +285,21 @@ fn the_layer_slider_leaves_the_layers_above_out_whole() {
     assert!(top_two.iter().all(|t| (t - z[0]).abs() < 1e-6 || (t - z[1]).abs() < 1e-6), "{top_two:?}");
     // One path per layer: no travel moves within a layer, in either case.
     assert_eq!(travel_two, 0);
+}
+
+#[test]
+fn beads_of_nearly_one_width_share_their_pieces() {
+    // Widths the slicer varies continuously (gap fill) round to WIDTH_STEP: a hundred widths
+    // between 0.400 and 0.4045 mm make one run, one pair of caps and one fan, not a hundred of each.
+    let paths: Vec<Path> = (0..100)
+        .map(|i| {
+            let mut p = path(Feature::GapFill, vec![[0.0, i as f32], [5.0, i as f32], [10.0, i as f32 + 0.5]]);
+            p.width_mm = 0.4 + 0.000045 * i as f32;
+            p
+        })
+        .collect();
+    let (scene, _) = scene_of(&held_with(vec![Layer { z: 0.2, height: 0.2, time_s: 1.0, paths }]), false);
+    assert_eq!(placements(&scene), 100 * 5);
+    assert!(scene.instanced.len() <= 4, "{} pieces", scene.instanced.len());
+    assert!((bead_half(0.41999998) - bead_half(0.42)).abs() < 1e-9);
 }
