@@ -1180,6 +1180,10 @@ const ELEMENTS: &[Element] = &[
     element!("slider_disabled", |ui, _| {
         ui.add_enabled_ui(false, |ui| slider(ui, &mut 0.5, 0.0..=1.0, Default::default()));
     }),
+    element!("vertical_slider", |ui, _| {
+        let track = ui.allocate_space(vec2(24.0, 160.0)).1;
+        vertical_slider(ui, track, &mut 40, 1..=100);
+    }),
     element!("scalar_field", |ui, _| {
         scalar_field(ui, &mut 0.5, 0.0..=1.0);
     }),
