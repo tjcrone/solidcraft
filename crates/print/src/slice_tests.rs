@@ -216,3 +216,29 @@ fn a_placement_moves_and_turns_the_part_on_the_bed() {
     assert!((f32::midpoint(c.min[0], c.max[0]) - f32::midpoint(a.min[0], a.max[0])).abs() < 1.0);
     assert!(slice(Placement { x: f32::NAN, y: 0.0, rotation_deg: 0.0 }).is_err());
 }
+
+#[test]
+fn pieces_of_one_extrusion_join_into_one_path() {
+    use crate::toolpaths::{Feature, Path};
+    let piece = |feature: Feature, width: f32, pts: &[[i32; 2]]| {
+        let points: Vec<[f32; 2]> = pts.iter().map(|p| [p[0] as f32, p[1] as f32]).collect();
+        let path = Path { feature: Some(feature), tool: 1, width_mm: width, speed_mm_s: 50.0, points };
+        (path, pts[0], pts[pts.len() - 1])
+    };
+    let solid = Feature::InternalSolid;
+    let joined = crate::sx::join_touching([
+        // A zigzag handed over a stroke at a time: one path with its turns as corners.
+        piece(solid, 0.42, &[[0, 0], [10, 0]]),
+        piece(solid, 0.42, &[[10, 0], [10, 1]]),
+        piece(solid, 0.42, &[[10, 1], [0, 1]]),
+        // A different width starts a new path, though it touches.
+        piece(solid, 0.38, &[[0, 1], [0, 2]]),
+        // A gap starts a new path, though nothing else changes.
+        piece(solid, 0.38, &[[5, 5], [6, 5]]),
+        // So does another feature.
+        piece(Feature::OuterWall, 0.38, &[[6, 5], [7, 5]]),
+    ]);
+    let points: Vec<usize> = joined.iter().map(|p| p.points.len()).collect();
+    assert_eq!(points, [4, 2, 2, 2]);
+    assert_eq!(joined[0].points, [[0.0, 0.0], [10.0, 0.0], [10.0, 1.0], [0.0, 1.0]]);
+}
