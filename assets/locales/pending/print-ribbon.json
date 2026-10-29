@@ -1,0 +1,20 @@
+{
+  "en": {
+    "cmd.print.start": "Print",
+    "help.print.start": "Sends the slice to the printer and starts printing it, after asking. Use it once the preview looks right and the printer is ready.",
+    "toolbar.job": "JOB",
+    "toolbar.place": "PLACE"
+  },
+  "ja": {
+    "cmd.print.start": "印刷",
+    "help.print.start": "確認のあと、スライスをプリンターに送って印刷を開始します。プレビューに問題がなく、プリンターの準備ができたら使います。",
+    "toolbar.job": "ジョブ",
+    "toolbar.place": "配置"
+  },
+  "zh": {
+    "cmd.print.start": "打印",
+    "help.print.start": "确认后，把切片发送到打印机并开始打印。在预览无误且打印机就绪后使用。",
+    "toolbar.job": "任务",
+    "toolbar.place": "放置"
+  }
+}
