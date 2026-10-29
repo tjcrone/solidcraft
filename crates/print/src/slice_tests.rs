@@ -58,10 +58,12 @@ fn a_flat_part_has_nothing_to_print() {
 }
 
 #[test]
-fn the_engine_version_named_is_the_tag_the_workspace_pins() {
+fn the_engine_version_named_is_the_one_the_workspace_pins() {
     let manifest = include_str!("../../../Cargo.toml");
     let pinned = manifest.lines().find(|l| l.starts_with("sx-core = ")).unwrap_or_default();
-    assert!(pinned.contains(&format!("tag = \"engine-v{}\"", sx::ENGINE_VERSION)), "{pinned}");
+    assert!(pinned.contains(&format!("rev = \"{}", sx::ENGINE_COMMIT)), "{pinned}");
+    let lock = include_str!("../../../Cargo.lock");
+    assert!(lock.contains(&format!("name = \"sx-core\"\nversion = \"{}\"", sx::ENGINE_VERSION)), "sx-core is not {} in Cargo.lock", sx::ENGINE_VERSION);
 }
 
 #[test]

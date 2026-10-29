@@ -405,7 +405,7 @@ static_assertions 1.1.0  (MIT OR Apache-2.0)
 strict-num 0.1.1  (MIT)
 subtle 2.6.1  (BSD-3-Clause)
 sx-boostvoronoi 0.12.1  (BSL-1.0)
-sx-core 0.1.9  (Apache-2.0)
+sx-core 0.2.5  (Apache-2.0)
 sx-cpp-map 0.2.0  (MIT OR Apache-2.0)
 sx-i-overlay 9.0.0  (MIT OR Apache-2.0)
 syn 1.0.109  (MIT OR Apache-2.0)
@@ -13621,7 +13621,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-sx-core 0.1.9
+sx-core 0.2.5
 ================================================================================
 
 Apache License
@@ -13827,7 +13827,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================================
-sx-core 0.1.9
+sx-core 0.2.5
 ================================================================================
 
 SlicerX

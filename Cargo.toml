@@ -58,10 +58,11 @@ spade = { version = "2.15", default-features = false, features = ["std"] }
 rayon = "1.12"
 
 # slicing engine for 3D printing (Apache-2.0): SlicerX's sx-core, which is not on crates.io, pinned to
-# its engine release tag. Only crates/print uses it. Default features off: `import` and
+# a reviewed commit of its main branch (after engine-v0.2.5: the skirt clears an automatic brim).
+# Only crates/print uses it. Default features off: `import` and
 # `sleipnir` would pull in sx-geom, and `parallel` (rayon) is turned on by crates/print for
 # native builds only.
-sx-core = { git = "https://github.com/slicerx-oss/slicerx", tag = "engine-v0.1.9", default-features = false }
+sx-core = { git = "https://github.com/slicerx-oss/slicerx", rev = "71ce5a5aac3d5f03630108b241985523d4ffa903", default-features = false }
 
 # packages (3MF)
 zip = { version = "9", default-features = false, features = ["deflate"] }
