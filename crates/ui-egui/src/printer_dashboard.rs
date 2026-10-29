@@ -227,19 +227,6 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
             follow(app, result, JobKind::Timelapse);
         }
     }
-    ui.separator();
-    let busy = matches!(state.as_str(), "printing" | "paused");
-    ui.horizontal(|ui| {
-        if crate::ui_kit::button(ui, app.tr("cmd.print.pause"), crate::ui_kit::Button::Enabled(reachable && state == "printing")).clicked() {
-            start(app, "print.pause");
-        }
-        if crate::ui_kit::button(ui, app.tr("cmd.print.resume"), crate::ui_kit::Button::Enabled(reachable && state == "paused")).clicked() {
-            start(app, "print.resume");
-        }
-    });
-    if crate::ui_kit::button(ui, app.tr("cmd.print.cancel"), crate::ui_kit::Button::Enabled(reachable && busy)).clicked() {
-        start(app, "print.cancel");
-    }
     crate::print_workspace::job_line(app, ui, &state);
     ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
 }
