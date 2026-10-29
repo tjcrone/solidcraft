@@ -1236,12 +1236,11 @@ impl Cost {
     fn of(paths: &Toolpaths) -> Cost {
         let mut cost = Cost { segments: 0, joins: 0, caps: 0 };
         for path in paths.layers.iter().flat_map(|l| &l.paths) {
-            let half = (path.width_mm * 0.5).max(0.05);
             let steps: Vec<[f32; 2]> = path.points.windows(2).filter_map(|w| direction(w[0], w[1]).map(|(d, _)| d)).collect();
             cost.segments += steps.len();
             let closed = path.points.len() > 2 && path.points.first() == path.points.last();
             let seam = if closed { steps.last().copied().zip(steps.first().copied()) } else { None };
-            cost.joins += steps.windows(2).map(|w| (w[0], w[1])).chain(seam).filter(|(d0, d1)| join_wanted(half, turn(*d0, *d1))).count();
+            cost.joins += steps.windows(2).map(|w| (w[0], w[1])).chain(seam).filter(|(d0, d1)| join_wanted(turn(*d0, *d1))).count();
             if !closed && !steps.is_empty() {
                 cost.caps += 2;
             }
@@ -1351,8 +1350,8 @@ struct Instancer {
 #[derive(Hash)]
 enum Piece {
     Run,
-    /// A corner turning this many whole degrees, to the left or not.
-    Join { degrees: u16, left: bool },
+    /// A corner turning this many quarter degrees, to the left or not.
+    Join { quarters: u16, left: bool },
     /// An end facing along the path (`true`, the path's last point) or back along it.
     Cap { forward: bool },
 }
@@ -1387,12 +1386,12 @@ impl Instancer {
     /// The outside of the corner at `v` between a step going `d0` and one going `d1`.
     fn join(&mut self, prof: &Profile, v: [f32; 2], d0: [f32; 2], d1: [f32; 2], c: PaletteIndex) {
         let angle = turn(d0, d1);
-        if !join_wanted(prof.half, angle) {
+        if !join_wanted(angle) {
             return;
         }
-        let degrees = (angle.to_degrees().round() as u16).clamp(1, 180);
+        let quarters = ((angle.to_degrees() * 4.0).round() as u16).clamp(1, 720);
         let left = d0[0] * d1[1] - d0[1] * d1[0] > 0.0;
-        self.place(prof, Piece::Join { degrees, left }, turned(d0, v, prof.top), c);
+        self.place(prof, Piece::Join { quarters, left }, turned(d0, v, prof.top), c);
     }
 
     /// The end of an open bead at `p`, the path going `d` there; `forward` for its last point.
@@ -1421,8 +1420,8 @@ fn piece_tris(prof: &Profile, piece: &Piece) -> Vec<Tri> {
                 quad(&mut out, [p0, p1, p2, p3], prof.face_normal(n, k));
             }
         }
-        Piece::Join { degrees, left } => {
-            let (s, c) = f32::from(degrees).to_radians().sin_cos();
+        Piece::Join { quarters, left } => {
+            let (s, c) = (f32::from(quarters) * 0.25).to_radians().sin_cos();
             join_tris(&mut out, prof, [0.0, 0.0], [1.0, 0.0], [c, if left { s } else { -s }]);
         }
         Piece::Cap { forward } => {
@@ -1529,8 +1528,6 @@ struct Profile {
     left: std::ops::Range<usize>,
     top: f32,
     bottom: f32,
-    /// Half the bead's width.
-    half: f32,
 }
 
 impl Profile {
@@ -1577,7 +1574,6 @@ impl Profile {
             left: 5..10,
             top,
             bottom,
-            half,
         }
     }
 
@@ -1722,15 +1718,14 @@ fn turn(d0: [f32; 2], d1: [f32; 2]) -> f32 {
     (d0[0] * d1[0] + d0[1] * d1[1]).clamp(-1.0, 1.0).acos()
 }
 
-/// Whether a corner turning `angle` gets a join: the gap it fills on the outside of the turn is
-/// about `half × angle` wide, and under [`JOIN_GAP`] nobody sees it (a fine chord of a curve
-/// turns a degree or two, half of a curved part's corners).
-fn join_wanted(half: f32, angle: f32) -> bool {
-    angle.is_finite() && half * angle >= JOIN_GAP
+/// Whether a corner turning `angle` gets a join: every corner that turns at all. A gap left on
+/// the outside of a turn, however narrow, shows as a dark seam across the bead up close.
+fn join_wanted(angle: f32) -> bool {
+    angle.is_finite() && angle >= STRAIGHT_ON
 }
 
-/// The widest gap left open on the outside of a corner, mm.
-const JOIN_GAP: f32 = 0.01;
+/// A turn this small (radians) is a straight run on: about 0.006°.
+const STRAIGHT_ON: f32 = 1e-4;
 
 fn join_steps(angle: f32) -> usize {
     ((angle / JOIN_STEP - 1e-4).ceil() as usize).clamp(1, 8)
