@@ -78,12 +78,11 @@ fn placements_of(scene: &GpuScene, which: impl Fn(&crate::gpu::InstancedMesh) ->
 }
 
 /// The scene of the first `shown` layers, built as the canvas builds it.
-fn toolpath_scene(h: &HeldSlice, travels: bool, shown: usize) -> Result<(GpuScene, Detail), String> {
-    let layered = Layered::build(h, travels)?;
-    Ok((layered.shown(shown), layered.detail))
+fn toolpath_scene(h: &HeldSlice, travels: bool, shown: usize) -> Result<GpuScene, String> {
+    Ok(Layered::build(h, travels, Budget::default())?.shown(shown))
 }
 
-fn scene_of(h: &HeldSlice, travels: bool) -> (GpuScene, Detail) {
+fn scene_of(h: &HeldSlice, travels: bool) -> GpuScene {
     toolpath_scene(h, travels, usize::MAX).unwrap_or_else(|e| panic!("{e}"))
 }
 
@@ -94,8 +93,7 @@ fn one_layer(points: Vec<[f32; 2]>) -> HeldSlice {
 #[test]
 fn straight_open_beads_are_placed_runs_and_caps_and_travels_join_the_paths() {
     let h = held(2, 3, 4);
-    let (scene, detail) = scene_of(&h, true);
-    assert!(detail == Detail::Beads);
+    let scene = scene_of(&h, true);
     let (segments, ends) = (2 * 3 * 3, 2 * 3 * 2);
     // Every piece is a placement of a shared one (one width, one layer height): a run per
     // segment and a cap per end; collinear points make no joins, and no bead is a triangle.
@@ -106,7 +104,7 @@ fn straight_open_beads_are_placed_runs_and_caps_and_travels_join_the_paths() {
     // Two travels per layer (between three paths), plus the bed grid and outline under everything.
     assert_eq!(scene.lines.len(), 2 * 2 * LINE_BYTES);
     assert!(scene.under.len() >= 4 * LINE_BYTES);
-    let (without, _) = scene_of(&h, false);
+    let without = scene_of(&h, false);
     assert_eq!(without.lines.len(), 0);
     assert_eq!(placements(&without), placements(&scene));
 }
@@ -129,7 +127,7 @@ fn placed(scene: &GpuScene, which: impl Fn(&crate::gpu::InstancedMesh) -> bool, 
 fn a_placement_lays_the_unit_run_along_its_segment() {
     let mut h = one_layer(vec![[2.0, 3.0], [2.0, 8.0]]);
     h.sliced.toolpaths.layers[0].z = 0.4;
-    let (scene, _) = scene_of(&h, false);
+    let scene = scene_of(&h, false);
     let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-5);
     // The run's start at the segment's start, its end at the segment's end, its top at the layer's,
     // its sideways axis the path's left (going +y, that is -x).
@@ -147,24 +145,24 @@ fn a_placement_lays_the_unit_run_along_its_segment() {
 #[test]
 fn a_corner_gets_a_fan_on_its_outside_and_a_closed_loop_gets_one_at_its_seam() {
     // An open right angle: two runs, one join, two caps.
-    let (scene, _) = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), false);
+    let scene = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), false);
     assert_eq!(join_steps(std::f32::consts::FRAC_PI_2), 2);
     assert_eq!(placements_of(&scene, is_run), 2);
     assert_eq!(placements(&scene), 5);
     // A closed square: four runs, four joins of one shared fan, no caps.
-    let (scene, _) = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]), false);
+    let scene = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]), false);
     assert_eq!(placements(&scene), 8);
     assert_eq!(scene.instanced.len(), 2, "one run and one left-turn fan");
     // A hairpin turns 180 degrees: its fan takes several steps so it stays round.
     assert_eq!(join_steps(std::f32::consts::PI), 4);
-    let (scene, _) = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [0.5, 0.0]]), false);
+    let scene = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [0.5, 0.0]]), false);
     assert_eq!(placements(&scene), 5);
 }
 
 #[test]
 fn a_join_sits_at_its_corner_and_fills_the_outside_of_the_turn() {
     // Going +x, then turning left to +y at (10, 0): the gap is on the right, below the corner.
-    let (scene, _) = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), false);
+    let scene = scene_of(&one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]), false);
     // Neither a run nor a cap (which is flat, at x = 0): reaching ahead and to the right.
     let is_fan = |m: &crate::gpu::InstancedMesh| !is_run(m) && m.tris.bounds[1][0] > 0.1 && m.tris.bounds[0][1] < -0.1;
     let fan = scene.instanced.iter().find(|m| is_fan(m)).map(|m| m.tris.clone()).unwrap_or_else(|| panic!("no fan to the right of its path"));
@@ -184,12 +182,12 @@ fn every_corner_that_turns_gets_a_join_however_gentle() {
         let (s, c) = degrees.to_radians().sin_cos();
         one_layer(vec![[0.0, 0.0], [10.0, 0.0], [10.0 + 10.0 * c, 10.0 * s]])
     };
-    assert_eq!(placements(&scene_of(&turned(1.0), false).0), 5);
-    assert_eq!(placements(&scene_of(&turned(0.001), false).0), 4);
+    assert_eq!(placements(&scene_of(&turned(1.0), false)), 5);
+    assert_eq!(placements(&scene_of(&turned(0.001), false)), 4);
     assert!(join_wanted(1f32.to_radians()) && !join_wanted(0.001f32.to_radians()));
     // A quarter-degree turn takes the smallest fan, FAN_STEP_DEGREES: rounded up, it covers the
     // whole outside of the turn, and what it sweeps past it lies inside the next run's bead.
-    let (scene, _) = scene_of(&turned(0.25), false);
+    let scene = scene_of(&turned(0.25), false);
     let fan = scene.instanced.iter().find(|m| !is_run(m) && m.tris.bounds[1][0] > 0.0 && m.tris.bounds[0][1] < -0.1).map(|m| m.tris.bounds);
     let reach = fan.unwrap_or_else(|| panic!("no fan"))[1][0];
     let step = f32::from(FAN_STEP_DEGREES).to_radians();
@@ -210,7 +208,7 @@ fn every_piece_triangle_faces_the_way_its_normal_points() {
             path(Feature::SparseInfill, vec![[1.0, 1.0], [9.0, 9.0], [9.0, 1.0]]),
         ],
     }]);
-    let (scene, _) = scene_of(&square, false);
+    let scene = scene_of(&square, false);
     assert!(scene.instanced.len() >= 5, "runs, fans of both sides, caps of both ends");
     let f = |b: &[u8]| f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
     for mesh in &scene.instanced {
@@ -230,15 +228,23 @@ fn every_piece_triangle_faces_the_way_its_normal_points() {
 }
 
 #[test]
-fn a_print_past_the_budget_becomes_lines() {
-    // Placements cost INSTANCE_SIZE each, a line LINE_BYTES: past the budget as placements, a
-    // print still shows as lines.
-    let cost = |n: usize| Cost { segments: n, joins: n, caps: 2 * n };
-    let n = MAX_GEOMETRY_BYTES / cost(1).bytes(Detail::Beads) + 1;
-    assert!(cost(n).bytes(Detail::Beads) > MAX_GEOMETRY_BYTES && cost(n).bytes(Detail::Lines) <= MAX_GEOMETRY_BYTES);
-    // The part that once fell to tops only (207,322 segments, 149,775 joins, 67,666 ends) fits.
-    let part = Cost { segments: 207_322, joins: 149_775, caps: 67_666 };
-    assert!(part.bytes(Detail::Beads) <= MAX_GEOMETRY_BYTES / 4);
+fn the_preview_budget_follows_the_device_and_a_print_past_it_is_refused_not_thinned() {
+    // The clamp pair at 50% gyroid (1,969,754 segments, 1,961,844 joins, 14,866 ends) was past
+    // the old fixed 128 MiB and fell to lines; the desktop budget for 256 MiB buffers holds it.
+    let pair = Cost { segments: 1_969_754, joins: 1_961_844, caps: 14_866 };
+    let desktop = Budget::of(256 << 20, false);
+    assert_eq!((desktop.total, desktop.buffer), (2 << 30, 256 << 20));
+    assert!(pair.bytes() > 128 << 20 && pair.bytes() <= desktop.total);
+    // The web keeps 128 MiB, and so does a device not yet known.
+    assert_eq!(Budget::default(), Budget::of(u64::MAX, true));
+    assert_eq!(Budget::default().total, 128 << 20);
+    // Past the budget the preview says so, with both sizes, rather than drawing less.
+    let tiny = Budget { total: 1024, buffer: 1024 };
+    let e = Layered::build(&held(2, 3, 4), false, tiny).err().unwrap_or_default();
+    assert!(e.contains("too large to preview") && e.contains("MiB"), "{e}");
+    // One piece's placements past one buffer is refused too, though the total fits.
+    let narrow = Budget { total: 2 << 30, buffer: crate::gpu::INSTANCE_SIZE };
+    assert!(Layered::build(&held(2, 3, 4), false, narrow).is_err());
 }
 
 #[test]
@@ -269,7 +275,7 @@ fn the_layer_slider_leaves_the_layers_above_out_whole() {
     // and nothing of the third, so no cut through it can leave a sliver of it behind.
     let h = held(3, 1, 3);
     let tops = |shown: usize| {
-        let (scene, _) = toolpath_scene(&h, true, shown).unwrap_or_else(|e| panic!("{e}"));
+        let scene = toolpath_scene(&h, true, shown).unwrap_or_else(|e| panic!("{e}"));
         let mut tops: Vec<f32> = Vec::new();
         for mesh in &scene.instanced {
             for one in mesh.instances.as_chunks::<{ crate::gpu::INSTANCE_SIZE }>().0 {
@@ -298,7 +304,7 @@ fn beads_of_nearly_one_width_share_their_pieces() {
             p
         })
         .collect();
-    let (scene, _) = scene_of(&held_with(vec![Layer { z: 0.2, height: 0.2, time_s: 1.0, paths }]), false);
+    let scene = scene_of(&held_with(vec![Layer { z: 0.2, height: 0.2, time_s: 1.0, paths }]), false);
     assert_eq!(placements(&scene), 100 * 5);
     assert!(scene.instanced.len() <= 4, "{} pieces", scene.instanced.len());
     assert!((bead_half(0.42f32.next_down()) - bead_half(0.42)).abs() < 1e-9);
