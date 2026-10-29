@@ -363,6 +363,9 @@ pub struct PrintSettingsWindow {
     /// The search text; while it is not empty every page shows the matching fields instead.
     pub filter: String,
     cache: Cache,
+    /// The design's overrides and the settings files as they were when the window opened: Cancel
+    /// puts them back. Changes apply as they are made, so the preview follows them.
+    before: Option<(BTreeMap<String, Value>, Vec<String>)>,
     /// The Advanced page's key and value being typed.
     custom_key: String,
     custom_value: String,
@@ -380,6 +383,10 @@ struct Cache {
 }
 
 pub fn open(app: &mut SolveApp) {
+    crate::print_workspace::load_settings(app);
+    if !app.print_settings_window.open {
+        app.print_settings_window.before = Some((app.session.doc.print.overlay.clone(), app.print_workspace.settings.config_files.clone()));
+    }
     app.print_settings_window.open = true;
     app.home.open = false;
 }
@@ -391,7 +398,8 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     }
     crate::print_workspace::load_settings(app);
     let title = app.tr("print.settings_title").to_string();
-    let done = app.tr("print.done").to_string();
+    let ok = app.tr("ui.heading_ok").to_string();
+    let cancel = app.tr("ui.cancel").to_string();
     let window = ui_kit::Window::new(egui::Id::new("sc_print_settings"), "settings", &title)
         .cards(3.0)
         .page_rows(24.0)
@@ -402,7 +410,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
             bottom: Tokens::get().space_16 as i8,
         })
         .fields()
-        .actions(&done, "", None);
+        .actions(&ok, &cancel, None);
     let mut selected = app.print_settings_window.section;
     let mut reset_all = false;
     let overridden = app.session.doc.print.overlay.len();
@@ -416,8 +424,38 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     if reset_all && let Err(e) = app.run("print.settings.clear", json!({})) {
         app.set_status(e, true);
     }
-    if closed || action == ui_kit::Action::Ok || action == ui_kit::Action::Cancel {
-        app.print_settings_window.open = false;
+    if action == ui_kit::Action::Ok {
+        close(app, true);
+    } else if closed || action == ui_kit::Action::Cancel {
+        close(app, false);
+    }
+}
+
+/// Close the window: OK keeps every change made in it (`keep`); Cancel and the close button put
+/// the design's overrides and the settings files back as they were when it opened.
+pub(crate) fn close(app: &mut SolveApp, keep: bool) {
+    app.print_settings_window.open = false;
+    if let Some(before) = app.print_settings_window.before.take()
+        && !keep
+    {
+        restore(app, before);
+    }
+}
+
+/// Cancel: the design's overrides and the settings files back to what they were when the window
+/// opened, where they changed.
+fn restore(app: &mut SolveApp, (overlay, files): (BTreeMap<String, Value>, Vec<String>)) {
+    if app.session.doc.print.overlay != overlay {
+        let result = app.run("print.settings.clear", json!({})).and_then(|_| {
+            if overlay.is_empty() { Ok(Value::Null) } else { app.run("print.settings.set", json!({ "set": overlay })) }
+        });
+        if let Err(e) = result {
+            app.set_status(e, true);
+        }
+    }
+    if app.print_workspace.settings.config_files != files {
+        app.print_workspace.settings.config_files = files;
+        crate::print_workspace::save_settings(app);
     }
 }
 
