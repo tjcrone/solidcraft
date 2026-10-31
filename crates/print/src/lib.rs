@@ -83,6 +83,9 @@ pub struct Job<'a> {
     /// A JSON object text, `{}` for the engine's defaults.
     pub config: &'a str,
     pub placement: Placement,
+    /// The moment of slicing, Unix seconds and the offset of local time from UTC in minutes, for
+    /// the G-code header's date (a printer host recognises the file by it); None leaves it undated.
+    pub now: Option<(i64, i32)>,
 }
 
 /// The parts' footprint on the bed before placement: the centre of their XY bounds.

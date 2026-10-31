@@ -418,13 +418,22 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     let slicer = solidcraft_print::default_slicer();
     let pl = s.doc.print.placement;
     let placement = solidcraft_print::Placement { x: pl.x as f32, y: pl.y as f32, rotation_deg: pl.rotation as f32 };
-    let sliced = slicer.slice(&Job { parts: &parts, config: &config, placement }).map_err(|e| EngineError::Other(format!("{SLICE}: {e}")))?;
+    let sliced = slicer
+        .slice(&Job { parts: &parts, config: &config, placement, now: slicing_time() })
+        .map_err(|e| EngineError::Other(format!("{SLICE}: {e}")))?;
     if let Some(path) = path {
         solidcraft_io::vfs::write(path, &sliced.gcode).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
     }
     let out = slice_result(&sliced, &slicer.name(), path);
     s.set_print_slice(Some(HeldSlice { sliced, doc: s.doc.clone(), bodies, config, slicer: slicer.name() }));
     Ok(out)
+}
+
+/// The moment of slicing for the G-code header: Unix seconds, in UTC (offset 0), from the clock
+/// the browser build has too; None if the clock reads before 1970.
+fn slicing_time() -> Option<(i64, i32)> {
+    let secs = web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).ok()?.as_secs();
+    Some((i64::try_from(secs).ok()?, 0))
 }
 
 /// What print.slice reports about a slice.

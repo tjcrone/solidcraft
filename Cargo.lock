@@ -4567,7 +4567,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sx-boostvoronoi"
 version = "0.12.1"
-source = "git+https://github.com/slicerx-oss/slicerx?rev=71ce5a5aac3d5f03630108b241985523d4ffa903#71ce5a5aac3d5f03630108b241985523d4ffa903"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fheader-date#81b42ced3e5364811b0a01ad30446e78e0fe5b0b"
 dependencies = [
  "approx 0.5.1",
  "libm",
@@ -4582,8 +4582,8 @@ dependencies = [
 
 [[package]]
 name = "sx-core"
-version = "0.2.5"
-source = "git+https://github.com/slicerx-oss/slicerx?rev=71ce5a5aac3d5f03630108b241985523d4ffa903#71ce5a5aac3d5f03630108b241985523d4ffa903"
+version = "0.2.7"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fheader-date#81b42ced3e5364811b0a01ad30446e78e0fe5b0b"
 dependencies = [
  "libm",
  "miniz_oxide 0.9.1",
@@ -4599,7 +4599,7 @@ dependencies = [
 [[package]]
 name = "sx-cpp-map"
 version = "0.2.0"
-source = "git+https://github.com/slicerx-oss/slicerx?rev=71ce5a5aac3d5f03630108b241985523d4ffa903#71ce5a5aac3d5f03630108b241985523d4ffa903"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fheader-date#81b42ced3e5364811b0a01ad30446e78e0fe5b0b"
 dependencies = [
  "smallvec",
  "thiserror 2.0.21",
@@ -4608,7 +4608,7 @@ dependencies = [
 [[package]]
 name = "sx-i-overlay"
 version = "9.0.0"
-source = "git+https://github.com/slicerx-oss/slicerx?rev=71ce5a5aac3d5f03630108b241985523d4ffa903#71ce5a5aac3d5f03630108b241985523d4ffa903"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fheader-date#81b42ced3e5364811b0a01ad30446e78e0fe5b0b"
 dependencies = [
  "i_float",
  "i_key_sort",

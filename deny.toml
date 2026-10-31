@@ -14,4 +14,4 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # SlicerX's slicing engine (sx-core) is not on crates.io; the workspace pins its release tag.
-allow-git = ["https://github.com/slicerx-oss/slicerx"]
+allow-git = ["https://github.com/slicerx-oss/slicerx", "https://github.com/tjcrone/slicerx"]
