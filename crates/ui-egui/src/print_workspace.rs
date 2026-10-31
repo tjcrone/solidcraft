@@ -903,7 +903,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             clip: [0.0; 4],
             cap: [0.0; 4],
             images: Vec::new(),
-            points: Vec::new(),
+            clouds: Vec::new(),
             analysis: [0.0; 8],
             analysis_colors: [0.0; 36],
             access: None,
@@ -914,6 +914,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             ssaa: 1.0,
             hover_tint: [0.0; 3],
             selection_tint: [0.0; 3],
+            sky: [0.0; 4],
         });
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         Ok(())
