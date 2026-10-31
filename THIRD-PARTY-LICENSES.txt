@@ -405,7 +405,7 @@ static_assertions 1.1.0  (MIT OR Apache-2.0)
 strict-num 0.1.1  (MIT)
 subtle 2.6.1  (BSD-3-Clause)
 sx-boostvoronoi 0.12.1  (BSL-1.0)
-sx-core 0.2.5  (Apache-2.0)
+sx-core 0.2.7  (Apache-2.0)
 sx-cpp-map 0.2.0  (MIT OR Apache-2.0)
 sx-i-overlay 9.0.0  (MIT OR Apache-2.0)
 syn 1.0.109  (MIT OR Apache-2.0)
@@ -13621,7 +13621,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-sx-core 0.2.5
+sx-core 0.2.7
 ================================================================================
 
 Apache License
@@ -13827,7 +13827,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================================
-sx-core 0.2.5
+sx-core 0.2.7
 ================================================================================
 
 SlicerX
@@ -13867,7 +13867,7 @@ what ships and under which terms, including the three libraries vendored in
 packages/vendor with our changes (i_overlay, boostvoronoi, cpp_map), the STEP
 reader built from occt-import-js and Open CASCADE Technology (LGPL-2.1; SlicerX
 makes use of facilities provided by the Open CASCADE Technology software; the
-source offer is in packages/vendor/occt-import-js/SOURCE.md), Cisco's OpenH264
+source offer is in packages/step-reader/SOURCE.md), Cisco's OpenH264
 binary, which is downloaded on Linux and never bundled, and the SigLIP2 model
 weights used by the print watch. The full per-version list is generated at
 release time into THIRD_PARTY_LICENSES and shipped with every build.
