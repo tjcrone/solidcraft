@@ -1245,6 +1245,8 @@ fn docked_assistant_beside_an_inverted_view_area_does_not_panic() {
         crate::viewport::refresh_layout(&mut h.app, &ctx);
         assert!(h.app.viewport.layout.is_some(), "{side}: a layout for the next frame");
     }
+}
+
 #[test]
 fn larger_icons_without_labels_keep_the_full_ribbon_height_and_widen_the_buttons() {
     let mut h = Harness::new();
