@@ -10,10 +10,10 @@ use sx_core::preflight;
 use crate::toolpaths::{Feature, Layer, Path, Toolpaths};
 use crate::{Error, Job, MAX_CONFIG_BYTES, Part, Refused, Report, Result, Sliced, Slicer};
 
-/// The engine version and commit the workspace pins (`sx-core`'s version in Cargo.lock and its
-/// `rev` in the root Cargo.toml); the crate itself does not say them. A test keeps them in step.
-pub const ENGINE_VERSION: &str = "0.2.5";
-pub const ENGINE_COMMIT: &str = "71ce5a5a";
+/// The engine's version and commit, read from the workspace lock file by `build.rs` (the crate
+/// itself does not say them), so the name follows the dependency wherever the lock file moves it.
+pub const ENGINE_VERSION: &str = env!("SX_CORE_VERSION");
+pub const ENGINE_COMMIT: &str = env!("SX_CORE_COMMIT");
 
 /// SlicerX's `sx-core` engine.
 #[derive(Clone, Copy, Debug, Default)]
@@ -34,6 +34,7 @@ impl Slicer for SxSlicer {
             return Err(Error::Config(preflight::blocking_text(&issues)));
         }
         report.warnings.extend(issues.iter().map(|i| i.message.clone()));
+        config.now = job.now;
         if !(job.placement.x.is_finite() && job.placement.y.is_finite() && job.placement.rotation_deg.is_finite()) {
             return Err(Error::Part { name: String::new(), reason: "the placement is not finite".into() });
         }

@@ -27,6 +27,7 @@ fn a_cube_slices_to_klipper_gcode_with_one_layer_per_layer_height() {
         parts: &parts,
         config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#,
         placement: Default::default(),
+        now: None,
     };
     let sliced = default_slicer().slice(&job).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(sliced.layers, 100);
@@ -44,7 +45,7 @@ fn hostile_parts_and_settings_are_refused_without_a_panic() {
     broken.triangles.push([0, 1, 99]);
     let nan = Part { name: "nan".into(), positions: vec![[f32::NAN; 3]; 3], triangles: vec![[0, 1, 2]] };
     for (parts, config) in [(vec![broken], "{}"), (vec![nan], "{}"), (vec![], "{}"), (vec![cube(10.0)], "not json"), (vec![cube(10.0)], "[1, 2]")] {
-        let job = Job { parts: &parts, config, placement: Default::default() };
+        let job = Job { parts: &parts, config, placement: Default::default(), now: None };
         assert!(default_slicer().slice(&job).is_err(), "{config} with {} parts", parts.len());
     }
 }
@@ -53,24 +54,15 @@ fn hostile_parts_and_settings_are_refused_without_a_panic() {
 fn a_flat_part_has_nothing_to_print() {
     let flat = Part { name: "flat".into(), positions: vec![[0., 0., 0.], [10., 0., 0.], [0., 10., 0.]], triangles: vec![[0, 1, 2]] };
     let parts = [flat];
-    let job = Job { parts: &parts, config: "{}", placement: Default::default() };
+    let job = Job { parts: &parts, config: "{}", placement: Default::default(), now: None };
     assert!(default_slicer().slice(&job).is_err());
-}
-
-#[test]
-fn the_engine_version_named_is_the_one_the_workspace_pins() {
-    let manifest = include_str!("../../../Cargo.toml");
-    let pinned = manifest.lines().find(|l| l.starts_with("sx-core = ")).unwrap_or_default();
-    assert!(pinned.contains(&format!("rev = \"{}", sx::ENGINE_COMMIT)), "{pinned}");
-    let lock = include_str!("../../../Cargo.lock");
-    assert!(lock.contains(&format!("name = \"sx-core\"\nversion = \"{}\"", sx::ENGINE_VERSION)), "sx-core is not {} in Cargo.lock", sx::ENGINE_VERSION);
 }
 
 #[test]
 fn a_value_the_engine_cannot_use_keeps_its_default_and_is_reported_with_the_keys_it_ignores() {
     let parts = [cube(20.0)];
     let config = r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "support_object_xy_distance": "50%", "no_such_setting": 1}"#;
-    let sliced = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default() }).unwrap_or_else(|e| panic!("{e}"));
+    let sliced = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default(), now: None }).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(sliced.layers, 100);
     let refused: Vec<&str> = sliced.report.refused.iter().map(|r| r.key.as_str()).collect();
     assert_eq!(refused, ["support_object_xy_distance"], "{:?}", sliced.report);
@@ -92,7 +84,7 @@ fn a_part_that_would_leave_the_printers_volume_is_refused_and_nothing_comes_back
     }
     for part in [wide, tall] {
         let parts = [part];
-        let r = default_slicer().slice(&Job { parts: &parts, config: "{}", placement: Default::default() });
+        let r = default_slicer().slice(&Job { parts: &parts, config: "{}", placement: Default::default(), now: None });
         assert!(matches!(r, Err(Error::Unsafe(_))), "{r:?}");
     }
 }
@@ -106,12 +98,12 @@ fn a_template_that_sends_the_head_outside_the_volume_is_refused() {
         ("machine_end_gcode", "M104 S0\\nM140 S0\\nG1 Z600"),
     ] {
         let config = format!(r#"{{"{key}": "{line}"}}"#);
-        let r = default_slicer().slice(&Job { parts: &parts, config: &config, placement: Default::default() });
+        let r = default_slicer().slice(&Job { parts: &parts, config: &config, placement: Default::default(), now: None });
         assert!(matches!(r, Err(Error::Unsafe(_))), "{key}: {line}: {r:?}");
     }
     // The same templates kept inside the volume slice fine.
     let config = r#"{"machine_start_gcode": "G28\nG0 X10 Y10 Z5", "machine_end_gcode": "M104 S0\nM140 S0\nG91\nG1 Z2\nG90\nG0 X0 Y250"}"#;
-    let r = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default() });
+    let r = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default(), now: None });
     assert!(r.is_ok(), "{:?}", r.err());
 }
 
@@ -120,14 +112,15 @@ fn a_purge_line_in_the_start_template_comes_back_as_a_file_bead() {
     let parts = [cube(20.0)];
     // A purge across the bed at 0.3 mm, then a lift and a retraction, which are not beads.
     let config = r#"{"machine_start_gcode": "G28\nM83\nG90\nG0 X10 Y10 Z0.3 F6000\nG1 X110 E5 F1200\nG1 E-2 F1800\nG0 Z5"}"#;
-    let sliced = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default() }).unwrap_or_else(|e| panic!("{e}"));
+    let sliced = default_slicer().slice(&Job { parts: &parts, config, placement: Default::default(), now: None }).unwrap_or_else(|e| panic!("{e}"));
     let beads = &sliced.toolpaths.file_beads;
     assert_eq!(beads.len(), 1, "{beads:?}");
     assert_eq!(beads[0].points, vec![[10.0, 10.0, 0.3], [110.0, 10.0, 0.3]]);
     assert!((beads[0].length_mm() - 100.0).abs() < 1e-3);
     assert!(beads[0].width_mm > 0.3 && beads[0].width_mm < 0.5, "{}", beads[0].width_mm);
     // The default templates command no bead.
-    let plain = default_slicer().slice(&Job { parts: &parts, config: "{}", placement: Default::default() }).unwrap_or_else(|e| panic!("{e}"));
+    let plain =
+        default_slicer().slice(&Job { parts: &parts, config: "{}", placement: Default::default(), now: None }).unwrap_or_else(|e| panic!("{e}"));
     assert!(plain.toolpaths.file_beads.is_empty());
 }
 
@@ -138,6 +131,7 @@ fn the_toolpaths_come_back_in_millimetres_with_one_layer_per_layer_and_outer_wal
         parts: &parts,
         config: r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#,
         placement: Default::default(),
+        now: None,
     };
     let sliced = default_slicer().slice(&job).unwrap_or_else(|e| panic!("{e}"));
     let paths = &sliced.toolpaths;
@@ -203,7 +197,7 @@ fn slab(x: f32, y: f32, z: f32) -> Part {
 fn a_placement_moves_and_turns_the_part_on_the_bed() {
     let parts = [slab(20.0, 10.0, 5.0)];
     let config = r#"{"layer_height": 0.2, "initial_layer_print_height": 0.2, "gcode_flavor": "klipper"}"#;
-    let slice = |placement: Placement| default_slicer().slice(&Job { parts: &parts, config, placement });
+    let slice = |placement: Placement| default_slicer().slice(&Job { parts: &parts, config, placement, now: None });
     let centred = slice(Placement::default()).unwrap_or_else(|e| panic!("{e}"));
     let moved = slice(Placement { x: 30.0, y: -20.0, rotation_deg: 0.0 }).unwrap_or_else(|e| panic!("{e}"));
     assert!((moved.offset[0] - centred.offset[0] - 30.0).abs() < 1e-3, "{:?} vs {:?}", moved.offset, centred.offset);
