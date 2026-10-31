@@ -14,5 +14,5 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # solidcore, pinned by rev in Cargo.toml (the kernel behind crates/smlib), and SlicerX's slicing
-# engine (sx-core), which is not on crates.io; the workspace pins its release tag.
-allow-git = ["https://github.com/tangency-labs/solidcore", "https://github.com/slicerx-oss/slicerx"]
+# engine (sx-core), which is not on crates.io.
+allow-git = ["https://github.com/tangency-labs/solidcore", "https://github.com/slicerx-oss/slicerx", "https://github.com/tjcrone/slicerx"]
