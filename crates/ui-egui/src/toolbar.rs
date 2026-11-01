@@ -41,9 +41,10 @@ pub use crate::ribbon::TAB_ROW_HEIGHT;
 pub const RIBBON_HEIGHT: f32 = TAB_ROW_HEIGHT + GROUP_HEIGHT + 1.0;
 pub(crate) const WORKSPACE_WIDTH: f32 = 88.0;
 
-/// The same height drives shell reservations and ribbon painting in either layout.
-pub(crate) fn ribbon_height(labels: bool) -> f32 {
-    if labels { RIBBON_HEIGHT } else { TAB_ROW_HEIGHT + ICON_GROUP_HEIGHT + 1.0 }
+/// The same height drives shell reservations and ribbon painting in either layout. Larger icons
+/// without labels make the ribbon as tall as with labels.
+pub(crate) fn ribbon_height(labels: bool, big_icons: bool) -> f32 {
+    if labels || big_icons { RIBBON_HEIGHT } else { TAB_ROW_HEIGHT + ICON_GROUP_HEIGHT + 1.0 }
 }
 
 /// The commands a panel's drop-down (or its » submenu) lists: its own, then any button moved
@@ -1037,7 +1038,7 @@ pub(crate) fn tabs_only(app: &SolveApp) -> bool {
 /// The height the ribbon keeps from the view: the tab row alone while it is folded, whose panels
 /// then open over the view.
 pub(crate) fn reserved_height(app: &SolveApp) -> f32 {
-    if tabs_only(app) { TAB_ROW_HEIGHT + 1.0 } else { ribbon_height(app.preferences.ribbon_labels) }
+    if tabs_only(app) { TAB_ROW_HEIGHT + 1.0 } else { ribbon_height(app.preferences.ribbon_labels, app.preferences.ribbon_big_icons) }
 }
 
 /// Where one pass of the ribbon draws: the folded tab row, the whole ribbon, or the whole ribbon
@@ -1094,7 +1095,7 @@ fn open_ribbon(app: &mut SolveApp, ui: &mut egui::Ui, available: Rect, folded: R
     let t = Tokens::get();
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
-    let full = ribbon_height(app.preferences.ribbon_labels);
+    let full = ribbon_height(app.preferences.ribbon_labels, app.preferences.ribbon_big_icons);
     let cards = crate::ui_kit::Cards::new(available, layout, full, WORKSPACE_WIDTH);
     let r = if floating {
         Rect::from_min_max(cards.workspace.min, cards.ribbon.max)
@@ -1226,12 +1227,15 @@ struct RibbonPanels {
     /// Print's Slice and Print panel stands at the right end of every Print tab, so it is in the
     /// same place whichever tab is open.
     print_actions: bool,
+    /// Without labels: larger icons in taller buttons (the "larger icons" preference).
+    big_icons: bool,
     running: Option<String>,
 }
 
 impl RibbonPanels {
     fn new(app: &SolveApp, ui: &egui::Ui, tab: &str, lists: &[PanelList], painter: &egui::Painter, running: Option<String>) -> Self {
         let labels = app.preferences.ribbon_labels;
+        let big_icons = !labels && app.preferences.ribbon_big_icons;
         let editing_in_place = app.edit_in_place.active.is_some();
         let open_menu = ui.ctx().data(|d| d.get_temp::<egui::Id>(egui::Id::unique("sc_panel_open")));
         let panels = lists
@@ -1251,6 +1255,9 @@ impl RibbonPanels {
                     let size = if labels {
                         let label = family.map_or_else(|| crate::workspace::ribbon_button_label(c), crate::workspace::ribbon_family_label);
                         ButtonSize { width: ribbon::button_width(painter, app.tr_label(label)), min_width: BUTTON_MIN_WIDTH }
+                    } else if big_icons {
+                        let width = ribbon::BIG_ICON_BUTTON_WIDTH + if family.is_some() { 14.0 } else { 0.0 };
+                        ButtonSize { width, min_width: width }
                     } else {
                         let width = if family.is_some() { 50.0 } else { 40.0 };
                         ButtonSize { width, min_width: width }
@@ -1357,7 +1364,7 @@ impl RibbonPanels {
             buttons,
         });
         let print_actions = crate::print_workspace::is_tab(tab) && panels.last().is_some_and(|p| p.panel == "PRINT");
-        RibbonPanels { panels, plugins, exit, print_actions, running: if app.preferences.ribbon_reveal { running } else { None } }
+        RibbonPanels { panels, plugins, exit, print_actions, big_icons, running: if app.preferences.ribbon_reveal { running } else { None } }
     }
 
     fn row<'a>(
@@ -1444,6 +1451,7 @@ impl RibbonPanels {
                 }))
                 .collect(),
             labels,
+            big_icons: self.big_icons,
             accent,
             exit: self.exit,
             keep_last_right: self.print_actions,
@@ -1503,7 +1511,9 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
     let layout = shell_layout(app);
     let host = Container::for_layout(layout, Surface::Chrome);
     let labels = app.preferences.ribbon_labels;
-    let group_height = if labels { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };
+    // Larger icons without labels: the ribbon is as tall as with labels.
+    let tall = labels || app.preferences.ribbon_big_icons;
+    let group_height = if tall { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };
     let RibbonShape { floating, cards, r, ws, folded } = shape;
     {
         let ribbon_left = if floating { cards.ribbon.left() } else { ws.right() };
@@ -1555,7 +1565,8 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
             tip: app.tr("ui.change_workspace"),
             open: app.viewport.context_menu.is_some() && app.menu.target == crate::context_menu::Target::Workspace,
             floating,
-            labels,
+            // The switcher's rows sit lower in the full-height ribbon.
+            labels: tall,
             folded,
             stage: render,
             accent: if render { solidcraft_theme::TabAccent::current(ui.ctx()).color } else { t.accent },
