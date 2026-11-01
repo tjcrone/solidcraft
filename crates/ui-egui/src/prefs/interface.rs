@@ -235,6 +235,12 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
                                 app.preferences.ribbon_labels = selected == 0;
                             }
                         });
+                        ui_kit::row(ui, "", |ui| {
+                            ui.add_enabled_ui(!app.preferences.ribbon_labels, |ui| {
+                                let label = app.tr("prefs.big_icons").to_string();
+                                ui_kit::checkbox(ui, &label, &mut app.preferences.ribbon_big_icons);
+                            });
+                        });
                         ui_kit::row(ui, app.tr("prefs.menus"), |ui| {
                             let mut selected = usize::from(app.preferences.ribbon_icon_grid);
                             if ui_kit::segmented(

@@ -2295,6 +2295,7 @@
   "prefs.auto_operation_note": "材料が接触する対象に応じて結合、新規ボディ、切り取りを選びます。",
   "prefs.axes": "軸",
   "prefs.axis": "軸",
+  "prefs.big_icons": "大きいアイコン",
   "prefs.blur_cost": "相対的な描画負荷です。バーが多いほど、通常は処理量が増えます。",
   "prefs.blur_device": "このグラフィックスデバイスまたは描画経路では利用できません",
   "prefs.blur_guard": "画面の応答性を保つため、ぼかしの品質を下げました。半径は変更されていません。",
