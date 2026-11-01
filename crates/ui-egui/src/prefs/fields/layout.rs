@@ -135,6 +135,8 @@ macro_rules! layout_preferences {
             /// Leave the commands the ribbon shows as buttons (pinned ones) out of its panel drop-downs,
             /// which then list only the rest (#4739).
             ribbon_menus_skip_pinned: bool = false, PAGE_LAYOUT;
+            /// Without labels: larger icons in a taller ribbon instead of the compact strip.
+            ribbon_big_icons: bool = false, PAGE_LAYOUT;
             /// Hovering a result in Search commands shows the command's place in the ribbon: its tab,
             /// its button or its row in a section's drop-down (#7287). A command started from the search
             /// blinks there, and a running command that sits in a drop-down marks its section label. Off

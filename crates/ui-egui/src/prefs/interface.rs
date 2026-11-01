@@ -292,6 +292,12 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
                                 app.preferences.ribbon_labels = selected == 0;
                             }
                         });
+                        ui_kit::row(ui, "", |ui| {
+                            ui.add_enabled_ui(!app.preferences.ribbon_labels, |ui| {
+                                let label = app.tr("prefs.big_icons").to_string();
+                                ui_kit::checkbox(ui, &label, &mut app.preferences.ribbon_big_icons);
+                            });
+                        });
                         let response = setting::legacy_surface_toolbar(app, ui).backing_on_hover_text(app.tr("prefs.legacy_surface_toolbar_hint"));
                         crate::scenario::publish_target("prefs:legacy_surface_toolbar", response.rect);
                         ui_kit::row(ui, app.tr("prefs.menus"), |ui| {

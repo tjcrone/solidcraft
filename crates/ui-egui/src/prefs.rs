@@ -7382,6 +7382,7 @@ mod tests {
             ("construct_menu_groups", json!(false), PAGE_LAYOUT),
             ("ribbon_menus_follow_hover", json!(true), PAGE_LAYOUT),
             ("ribbon_menus_skip_pinned", json!(true), PAGE_LAYOUT),
+            ("ribbon_big_icons", json!(true), PAGE_LAYOUT),
             ("history_sketches", json!("under_feature"), PAGE_LAYOUT),
             ("history_play_button", json!(false), PAGE_LAYOUT),
             ("history_folder_kind_icon", json!(true), PAGE_LAYOUT),
