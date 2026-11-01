@@ -24,7 +24,7 @@ fn civil(days: i64) -> (i64, i64, i64) {
 }
 
 fn main() {
-    let commit = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    let commit = git(&["rev-parse", "--short=8", "HEAD"]).unwrap_or_else(|| "unknown".into());
     let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some();
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let (y, m, d) = civil(secs.div_euclid(86_400));

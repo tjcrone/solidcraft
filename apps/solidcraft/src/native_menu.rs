@@ -36,7 +36,13 @@ impl NativeMenu {
         };
         application.append(&PredefinedMenuItem::about(
             Some("About SolidCraft"),
-            Some(AboutMetadata { name: Some("SolidCraft".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() }),
+            // macOS shows "Version <version> (<short_version>)": the release, then the commit.
+            Some(AboutMetadata {
+                name: Some("SolidCraft".into()),
+                version: Some(solidcraft_ui_egui::help::VERSION.into()),
+                short_version: Some(solidcraft_ui_egui::help::COMMIT.into()),
+                ..Default::default()
+            }),
         ))?;
         application.append(&PredefinedMenuItem::separator())?;
         add(
