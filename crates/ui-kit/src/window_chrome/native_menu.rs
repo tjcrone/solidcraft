@@ -25,6 +25,9 @@ pub struct MenuBar {
     pub title: String,
     /// Shown in About.
     pub version: String,
+    /// Shown in About after the version (macOS: "Version <version> (<build>)"), such as the commit;
+    /// empty for none.
+    pub build: String,
     /// The app menu's own entries, between About and Services (Settings, ...).
     pub app: Vec<Item>,
     /// The app menu's last entry.
@@ -194,6 +197,7 @@ mod native {
         table: MenuTable,
         title: String,
         version: String,
+        build: String,
         items: Vec<(String, MenuItem)>,
         /// Every submenu by its id.
         submenus: Vec<(String, Submenu)>,
@@ -210,7 +214,14 @@ mod native {
             // Rows first: the bar is only installed, and taken down on drop, once it is whole.
             let mut table = MenuTable::default();
             let menus = table.layout(bar);
-            let mut rows = Rows { table, title: bar.title.clone(), version: bar.version.clone(), items: Vec::new(), submenus: Vec::new() };
+            let mut rows = Rows {
+                table,
+                title: bar.title.clone(),
+                version: bar.version.clone(),
+                build: bar.build.clone(),
+                items: Vec::new(),
+                submenus: Vec::new(),
+            };
             let menu = Menu::new();
             for m in menus {
                 let sub = Submenu::new(m.label, m.enabled);
@@ -272,7 +283,12 @@ mod native {
             match s {
                 System::About => PredefinedMenuItem::about(
                     Some(&format!("About {title}")),
-                    Some(AboutMetadata { name: Some(title.into()), version: Some(self.version.clone()), ..Default::default() }),
+                    Some(AboutMetadata {
+                        name: Some(title.into()),
+                        version: Some(self.version.clone()),
+                        short_version: (!self.build.is_empty()).then(|| self.build.clone()),
+                        ..Default::default()
+                    }),
                 ),
                 System::Services => PredefinedMenuItem::services(None),
                 System::Hide => PredefinedMenuItem::hide(Some(&format!("Hide {title}"))),
@@ -368,6 +384,7 @@ mod tests {
         MenuBar {
             title: "Craft".into(),
             version: "1.0".into(),
+            build: String::new(),
             app: vec![entry("ui.prefs", "Settings…").with(json!({"open": "General"})).key("Cmd+,")],
             quit: entry("app.quit", "Quit Craft").key("Cmd+Q"),
             menus: vec![
