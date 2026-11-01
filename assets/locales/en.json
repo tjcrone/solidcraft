@@ -2533,6 +2533,7 @@
   "prefs.background_choose": "Choose picture…",
   "prefs.background_image": "Picture",
   "prefs.background_unreadable": "Could not read the background picture",
+  "prefs.big_icons": "Larger icons",
   "prefs.blur_cost": "Relative rendering cost. More bars usually mean more work.",
   "prefs.blur_device": "Unavailable on this graphics device or rendering path",
   "prefs.blur_guard": "Blur quality was reduced to keep frames responsive. The radius is unchanged.",

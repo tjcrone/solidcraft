@@ -2533,6 +2533,7 @@
   "prefs.background_choose": "选择图片…",
   "prefs.background_image": "图片",
   "prefs.background_unreadable": "无法读取背景图片",
+  "prefs.big_icons": "更大的图标",
   "prefs.blur_cost": "相对渲染开销。条形越多，通常意味着处理工作越多。",
   "prefs.blur_device": "此图形设备或渲染路径不支持此功能",
   "prefs.blur_guard": "已降低模糊质量，以保持画面响应。模糊半径未改变。",

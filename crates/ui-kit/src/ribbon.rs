@@ -80,6 +80,12 @@ pub const GROUP_HEIGHT: f32 = 86.0;
 pub const BUTTON_HEIGHT: f32 = 60.0;
 pub const ICON_BUTTON_HEIGHT: f32 = 36.0;
 pub const ICON_GROUP_HEIGHT: f32 = 62.0;
+/// Without labels, the larger-icons layout ([`Row::big_icons`]): 40 px icons in 48 px buttons (36 px
+/// icons in a split button, whose menu half opens its variants), the group as tall as with labels.
+pub const BIG_ICON_SIDE: f32 = 40.0;
+pub const BIG_SPLIT_ICON_SIDE: f32 = 36.0;
+pub const BIG_ICON_BUTTON_WIDTH: f32 = 48.0;
+pub const BIG_ICON_BUTTON_HEIGHT: f32 = 52.0;
 
 pub const BUTTON_GAP: f32 = 3.0;
 pub const BUTTON_MIN_WIDTH: f32 = 54.0;
@@ -377,6 +383,8 @@ pub struct Row<'a> {
     pub groups: Vec<Group<'a>>,
     /// Buttons carry their labels (taller buttons, wider cells).
     pub labels: bool,
+    /// Without labels: larger icons in taller buttons, the row as tall as with labels.
+    pub big_icons: bool,
     /// The active tab's accent: pressed buttons, open and running labels.
     pub accent: TabAccent,
     /// The last group leaves the mode (Finish): room is always kept for it, it never collapses,
@@ -598,8 +606,15 @@ pub fn show(ui: &mut egui::Ui, row: &Row, rect: Rect, more_rows: &mut dyn FnMut(
     let painter = ui.painter().clone();
     let labels = row.labels;
     let h = &row.handles;
-    let button_height = if labels { BUTTON_HEIGHT } else { ICON_BUTTON_HEIGHT };
-    let group_height = if labels { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };
+    let big = !labels && row.big_icons;
+    let button_height = if labels {
+        BUTTON_HEIGHT
+    } else if big {
+        BIG_ICON_BUTTON_HEIGHT
+    } else {
+        ICON_BUTTON_HEIGHT
+    };
+    let group_height = if labels || big { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };
     let gallery_width = if labels { GALLERY_WIDTH } else { 6.0 * 27.0 };
     let (top, right) = (rect.top(), rect.right());
     let mut px = rect.left();
@@ -732,7 +747,13 @@ pub fn show(ui: &mut egui::Ui, row: &Row, rect: Rect, more_rows: &mut dyn FnMut(
                 paint_reveal(&painter, whole, &accent, r.strength, true);
                 solidcraft_ui_registry::publish_rect(h.reveal, whole);
             }
-            let side = if exit { 30.0 } else { 26.0 };
+            let side = if big {
+                if b.split.is_some() { BIG_SPLIT_ICON_SIDE } else { BIG_ICON_SIDE }
+            } else if exit {
+                30.0
+            } else {
+                26.0
+            };
             let icon_rect =
                 Rect::from_center_size(pos2(br.center().x, whole.top() + if labels { 16.0 } else { button_height / 2.0 }), vec2(side, side));
             crate::icons::paint_icon(&painter, icon_rect, b.icon, if b.enabled { 1.0 } else { 0.35 });

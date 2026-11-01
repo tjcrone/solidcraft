@@ -2533,6 +2533,7 @@
   "prefs.background_choose": "画像を選択…",
   "prefs.background_image": "画像",
   "prefs.background_unreadable": "背景画像を読み込めませんでした",
+  "prefs.big_icons": "大きいアイコン",
   "prefs.blur_cost": "相対的な描画負荷です。バーが多いほど、通常は処理量が増えます。",
   "prefs.blur_device": "このグラフィックスデバイスまたは描画経路では利用できません",
   "prefs.blur_guard": "画面の応答性を保つため、ぼかしの品質を下げました。半径は変更されていません。",
