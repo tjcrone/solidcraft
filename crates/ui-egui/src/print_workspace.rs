@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use egui::{Color32, Sense, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use solidcraft_engine::geom::{Aabb3, Vec3};
+use solidcore_record::Vec3;
+use solidcraft_engine::geom::Aabb3;
+use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::held_slice::HeldSlice;
 use solidcraft_engine::print::{Feature, Layer, Toolpaths};
 use solidcraft_engine::printer_host::PrinterHost;
@@ -887,6 +889,8 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             product_lights: None,
             product: true,
             upload_error: None,
+            preview_bounds: None,
+            hatch: Default::default(),
             key,
             slot: slot.clone(),
             sketch_key: 0,
@@ -1278,6 +1282,7 @@ impl Layered {
                 tris: m.tris.clone(),
                 instances: m.instances.get(..*end).unwrap_or_default().to_vec(),
                 look: m.look,
+                closed: m.closed,
                 levels: m.levels.clone(),
             })
             .collect();
@@ -1322,6 +1327,8 @@ impl Instancer {
                 instances: Vec::new(),
                 look: crate::gpu::InstanceLook::Opaque,
                 levels: Vec::new(),
+                // Bead pieces have no bottom faces and no section cuts them.
+                closed: false,
             });
             self.meshes.len() - 1
         });
