@@ -590,7 +590,7 @@ const SLICE_CHORD_MM: f64 = 0.002;
 /// The bodies to print, tessellated at [`SLICE_CHORD_MM`] and welded the way the mesh export does,
 /// so each is closed where its faces meet.
 fn parts(s: &Session, bodies: &[String]) -> Result<Vec<Part>> {
-    let state = s.world_state();
+    let state = s.world_state()?;
     for name in bodies {
         if !state.bodies.iter().any(|b| b.name == *name) {
             return Err(bad(SLICE, format!("unknown body name `{name}`")));
