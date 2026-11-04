@@ -1054,13 +1054,14 @@ fn upload(app: &mut SolveApp) -> Result<(), String> {
     let bed = app.print_workspace.bed.as_ref().map_or([0; 4], |b| b.rect.map(|v| (v * 10.0).round() as i32));
     let shift = drag_shift(app);
     let drag = [(shift[0] * 10.0).round() as i64, (shift[1] * 10.0).round() as i64];
+    let world = app.session.world_state().map_err(|e| e.to_string())?;
     let source = match app.session.print_slice() {
         Some(held) if app.ui.tab == PREVIEW => Source::Toolpaths {
             slice: Arc::as_ptr(held) as usize,
             travels: app.print_workspace.show_travels,
             shown: shown_layer(app, held.sliced.toolpaths.layers.len()),
         },
-        _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&app.session.world_state()) as usize, placement, bed, drag },
+        _ => Source::Prepared { revision: app.session.revision, world: Arc::as_ptr(&world) as usize, placement, bed, drag },
     };
     if app.print_workspace.uploaded == Some(source) {
         return Ok(());
