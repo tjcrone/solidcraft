@@ -598,7 +598,7 @@ fn parts(s: &Session, bodies: &[String]) -> Result<Vec<Part>> {
     }
     let mut parts = Vec::new();
     for b in state.bodies.iter().filter(|b| bodies.is_empty() || bodies.contains(&b.name)) {
-        let mesh = b.body.tessellate(SLICE_CHORD_MM)?;
+        let mesh = b.body.mesh(&solidcraft_kernel::MeshTolerance::chord(SLICE_CHORD_MM))?;
         let eps = (b.body.size() * 1e-6).max(1e-7);
         let (positions, triangles) = solidcraft_io::weld(&mesh.positions, &mesh.triangles, eps);
         let positions = positions.iter().map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect();

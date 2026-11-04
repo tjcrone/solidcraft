@@ -59,7 +59,7 @@ fn only_the_named_bodies_are_sliced() {
     let mut s = Session::default();
     run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10}));
     run(&mut s, "solid.cylinder", json!({"radius": 5, "height": 30, "center": [40, 0, 0]}));
-    let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
+    let names: Vec<String> = s.world_state().unwrap().bodies.iter().map(|b| b.name.clone()).collect();
     assert_eq!(names.len(), 2, "{names:?}");
     let path = out("one.gcode");
     let settings: Value = serde_json::from_str(KLIPPER_02).unwrap();
