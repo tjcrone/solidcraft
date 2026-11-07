@@ -1947,7 +1947,20 @@ pub fn password_field(ui: &mut Ui, id: egui::Id, value: &mut String, hint: &str)
 /// Bounded integer or decimal preference with its original drag step and unit suffix.
 /// Tokens: scope control/font tokens. Values and limits are caller data.
 pub fn number_field<T: egui::emath::Numeric>(ui: &mut Ui, value: &mut T, range: std::ops::RangeInclusive<T>, speed: f64, suffix: &str) -> Response {
-    bounded_number_field(ui, value, range, speed, suffix, true, false)
+    bounded_number_field(ui, value, range, speed, suffix, true, false, true)
+}
+
+/// [`number_field`] whose typed value applies once, on Enter or when the field loses focus, not on
+/// every key press: for values whose change rebuilds the row or adds an undo step. Dragging still
+/// applies as it goes.
+pub fn number_field_on_commit<T: egui::emath::Numeric>(
+    ui: &mut Ui,
+    value: &mut T,
+    range: std::ops::RangeInclusive<T>,
+    speed: f64,
+    suffix: &str,
+) -> Response {
+    bounded_number_field(ui, value, range, speed, suffix, true, false, false)
 }
 
 /// A bounded editor that preserves an existing out-of-range value until the person edits it.
@@ -1960,14 +1973,15 @@ pub fn number_field_preserving<T: egui::emath::Numeric>(
     speed: f64,
     suffix: &str,
 ) -> Response {
-    bounded_number_field(ui, value, range, speed, suffix, false, false)
+    bounded_number_field(ui, value, range, speed, suffix, false, false, true)
 }
 
 /// A number editor for narrow columns that displays large magnitudes in scientific notation.
 pub fn compact_number_field(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>, speed: f64, suffix: &str) -> Response {
-    bounded_number_field(ui, value, range, speed, suffix, true, true)
+    bounded_number_field(ui, value, range, speed, suffix, true, true, true)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn bounded_number_field<T: egui::emath::Numeric>(
     ui: &mut Ui,
     value: &mut T,
@@ -1976,9 +1990,15 @@ fn bounded_number_field<T: egui::emath::Numeric>(
     suffix: &str,
     clamp_existing: bool,
     compact: bool,
+    update_while_editing: bool,
 ) -> Response {
-    let mut widget =
-        egui::DragValue::new(value).range(range).clamp_existing_to_range(clamp_existing).speed(speed).suffix(suffix).custom_parser(parse_number);
+    let mut widget = egui::DragValue::new(value)
+        .range(range)
+        .clamp_existing_to_range(clamp_existing)
+        .update_while_editing(update_while_editing)
+        .speed(speed)
+        .suffix(suffix)
+        .custom_parser(parse_number);
     if compact {
         let id = ui.next_auto_id();
         let ctx = ui.ctx().clone();
