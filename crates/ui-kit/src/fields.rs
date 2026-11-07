@@ -1674,7 +1674,7 @@ pub(crate) fn vertical_slider<T: egui::emath::Numeric>(
     painter.line_segment([egui::pos2(x, y), egui::pos2(x, bottom)], egui::Stroke::new(t.space_4, t.accent));
     let r = if response.hovered() || response.dragged() { t.space_8 + t.space_2 } else { t.space_8 };
     painter.circle(egui::pos2(x, y), r, t.accent, egui::Stroke::new(t.space_2, t.panel));
-    publish(ui, &response, egui::WidgetType::Slider);
+    publish(ui, &response, egui::Role::Slider);
     response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), value.to_f64(), crate::i18n::tr_label(label(ui))));
     response
 }

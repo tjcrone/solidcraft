@@ -2193,7 +2193,7 @@ fn doc_settings(app: &mut SolveApp, ui: &mut egui::Ui, depth: usize) {
         }
     }
     let print = app.tr("print.browser_row").to_string();
-    if draw_row(ui, ui.id().with("print_settings"), &Row { depth: depth + 1, icon: "ws_print", label: &print, ..Default::default() }).clicked {
+    if draw_row(ui, ui.scope_id().with("print_settings"), &Row { depth: depth + 1, icon: "ws_print", label: &print, ..Default::default() }).clicked {
         app.start("print.settings.set");
     }
 }
