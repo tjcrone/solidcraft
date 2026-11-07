@@ -81,7 +81,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     app.viewport.rect = Some(rect);
     let t = Tokens::get();
     ui.painter().rect_filled(rect, 0.0, t.viewport_bottom);
-    ui.interact(rect, ui.id().with("printer_dashboard"), Sense::hover());
+    ui.interact(rect, ui.scope_id().with("printer_dashboard"), Sense::hover());
     sync_camera(app);
     let message = match camera_frame(app, ui.ctx()) {
         Ok(true) => None,
