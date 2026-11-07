@@ -238,3 +238,20 @@ fn pieces_of_one_extrusion_join_into_one_path() {
     assert_eq!(points, [4, 2, 2, 2]);
     assert_eq!(joined[0].points, [[0.0, 0.0], [10.0, 0.0], [10.0, 1.0], [0.0, 1.0]]);
 }
+
+#[test]
+fn curved_solid_patterns_turn_narrow_detection_off_and_line_patterns_keep_it() {
+    let with = |pattern: Option<&str>| {
+        let mut m = serde_json::Map::new();
+        if let Some(p) = pattern {
+            m.insert("internal_solid_infill_pattern".into(), serde_json::Value::String(p.into()));
+        }
+        workarounds(&m)
+    };
+    for line in [None, Some("monotonic"), Some("monotonicline"), Some("rectilinear"), Some("alignedrectilinear"), Some("zig-zag")] {
+        assert!(with(line).is_empty(), "{line:?}");
+    }
+    for curve in ["concentric", "hilbertcurve", "archimedeanchords", "octagramspiral"] {
+        assert_eq!(with(Some(curve)), [("detect_narrow_internal_solid_infill", serde_json::Value::String("0".into()))], "{curve}");
+    }
+}

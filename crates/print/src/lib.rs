@@ -159,6 +159,19 @@ pub fn default_slicer() -> impl Slicer {
 #[path = "slice_tests.rs"]
 mod tests;
 
+/// Settings that stand in for a profile file's value to work round engine faults, given the merged
+/// settings. sx-core's narrow internal solid split for curved patterns (`narrow::split_core`) cuts
+/// slivers off a curved band, which print as broken pieces and leave the concentric loops ragged; the
+/// straight line patterns split another way and keep it. Drop this when SlicerX fixes the split.
+pub fn workarounds(settings: &serde_json::Map<String, serde_json::Value>) -> Vec<(&'static str, serde_json::Value)> {
+    let solid = settings.get("internal_solid_infill_pattern").and_then(serde_json::Value::as_str).unwrap_or("monotonic");
+    if matches!(solid, "monotonic" | "monotonicline" | "rectilinear" | "alignedrectilinear" | "zig-zag") {
+        Vec::new()
+    } else {
+        vec![("detect_narrow_internal_solid_infill", serde_json::Value::String("0".into()))]
+    }
+}
+
 /// True when the slicer reads `key` (an OrcaSlicer setting name) in some way, so a profile or a
 /// design that sets it changes the print. The browser build cannot tell and says yes.
 pub fn engine_reads(key: &str) -> bool {

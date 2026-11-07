@@ -325,3 +325,29 @@ fn a_slice_that_answers_the_same_request_is_reused_until_something_changes() {
     assert_eq!(run(&mut s, "print.slice", json!({"check": true, "config": config}))["current"], false);
     std::fs::remove_file(&config).ok();
 }
+
+#[test]
+fn concentric_solid_infill_turns_the_files_narrow_detection_off_but_not_the_designs() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 4}));
+    let config = out("narrow.json");
+    std::fs::write(&config, r#"{"gcode_flavor": "klipper", "detect_narrow_internal_solid_infill": "1"}"#).unwrap();
+    let narrow = |s: &Session| {
+        let held: Value = serde_json::from_str(&s.print_slice().map(|h| h.config.clone()).unwrap_or_default()).unwrap();
+        held["detect_narrow_internal_solid_infill"].clone()
+    };
+    // A line pattern keeps the file's value.
+    run(&mut s, "print.slice", json!({"config": config}));
+    assert_eq!(narrow(&s), "1");
+    // A curved one replaces it.
+    run(&mut s, "print.settings.set", json!({"set": {"internal_solid_infill_pattern": "concentric"}}));
+    run(&mut s, "print.slice", json!({"config": config}));
+    assert_eq!(narrow(&s), "0");
+    // The call's own value wins, and so does the design's.
+    run(&mut s, "print.slice", json!({"config": config, "settings": {"detect_narrow_internal_solid_infill": "1"}}));
+    assert_eq!(narrow(&s), "1");
+    run(&mut s, "print.settings.set", json!({"set": {"detect_narrow_internal_solid_infill": "1"}}));
+    run(&mut s, "print.slice", json!({"config": config}));
+    assert_eq!(narrow(&s), "1");
+    std::fs::remove_file(&config).ok();
+}
