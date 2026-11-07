@@ -1801,7 +1801,20 @@ pub fn password_field(ui: &mut Ui, id: egui::Id, value: &mut String, hint: &str)
 /// Bounded integer or decimal preference with its original drag step and unit suffix.
 /// Tokens: scope control/font tokens. Values and limits are caller data.
 pub fn number_field<T: egui::emath::Numeric>(ui: &mut Ui, value: &mut T, range: std::ops::RangeInclusive<T>, speed: f64, suffix: &str) -> Response {
-    bounded_number_field(ui, value, range, speed, suffix, true)
+    bounded_number_field(ui, value, range, speed, suffix, true, true)
+}
+
+/// [`number_field`] whose typed value applies once, on Enter or when the field loses focus, not on
+/// every key press: for values whose change rebuilds the row or adds an undo step. Dragging still
+/// applies as it goes.
+pub fn number_field_on_commit<T: egui::emath::Numeric>(
+    ui: &mut Ui,
+    value: &mut T,
+    range: std::ops::RangeInclusive<T>,
+    speed: f64,
+    suffix: &str,
+) -> Response {
+    bounded_number_field(ui, value, range, speed, suffix, true, false)
 }
 
 /// A bounded editor that preserves an existing out-of-range value until the person edits it.
@@ -1814,7 +1827,7 @@ pub fn number_field_preserving<T: egui::emath::Numeric>(
     speed: f64,
     suffix: &str,
 ) -> Response {
-    bounded_number_field(ui, value, range, speed, suffix, false)
+    bounded_number_field(ui, value, range, speed, suffix, false, true)
 }
 
 fn bounded_number_field<T: egui::emath::Numeric>(
@@ -1824,9 +1837,16 @@ fn bounded_number_field<T: egui::emath::Numeric>(
     speed: f64,
     suffix: &str,
     clamp_existing: bool,
+    update_while_editing: bool,
 ) -> Response {
     let response = ui.add(
-        egui::DragValue::new(value).range(range).clamp_existing_to_range(clamp_existing).speed(speed).suffix(suffix).custom_parser(parse_number),
+        egui::DragValue::new(value)
+            .range(range)
+            .clamp_existing_to_range(clamp_existing)
+            .update_while_editing(update_while_editing)
+            .speed(speed)
+            .suffix(suffix)
+            .custom_parser(parse_number),
     );
     if response.has_focus() {
         super::settings_search::note_key_sink(ui.ctx());

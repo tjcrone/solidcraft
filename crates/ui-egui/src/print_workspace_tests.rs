@@ -391,3 +391,31 @@ fn print_from_the_ribbon_asks_first() {
     assert!(app.print_workspace.confirm_print, "the question is open");
     assert_eq!(*host.0.lock().unwrap_or_else(|e| e.into_inner()), 0, "nothing was sent before the answer");
 }
+
+/// A number typed into the Print Settings window lands whole, as one change: the first key press
+/// used to turn the field into an override, which rebuilt its row and took the focus, so "50"
+/// became 5.
+#[test]
+fn a_typed_print_setting_lands_whole_as_one_change() {
+    use serde_json::json;
+    let mut h = crate::scenario::Harness::new();
+    crate::print_settings_window::open(&mut h.app);
+    h.app.print_settings_window.filter = "Inner wall".into();
+    h.frames(3);
+    h.step(&json!({"click": {"handle": "dialog:Inner wall"}})).unwrap_or_else(|e| panic!("{e}"));
+    h.frames(2);
+    h.step(&json!({"key": "A", "cmd": true})).unwrap_or_else(|e| panic!("{e}"));
+    for digit in ["5", "0"] {
+        h.step(&json!({"text": digit})).unwrap_or_else(|e| panic!("{e}"));
+        h.frames(2);
+    }
+    assert!(!h.app.session.doc.print.overlay.contains_key("inner_wall_speed"), "nothing applies while typing");
+    // Pressed and released in separate frames, as a hand does.
+    for pressed in [true, false] {
+        h.step(&json!({"key": "Enter", "pressed": pressed})).unwrap_or_else(|e| panic!("{e}"));
+        h.frames(2);
+    }
+    assert_eq!(h.app.session.doc.print.overlay.get("inner_wall_speed"), Some(&json!("50")), "{:?}", h.app.session.doc.print.overlay);
+    h.app.run("edit.undo", json!({})).unwrap_or_else(|e| panic!("{e}"));
+    assert!(!h.app.session.doc.print.overlay.contains_key("inner_wall_speed"), "one undo takes the whole value back");
+}

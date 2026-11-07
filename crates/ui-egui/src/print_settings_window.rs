@@ -670,14 +670,15 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
     let (current, source, file) =
         app.print_settings_window.cache.values.get(field.key).cloned().unwrap_or((Value::Null, "default".into(), String::new()));
     let overridden = source == "design";
+    // The row keeps its shape while a value is typed (the reset button is always there, enabled
+    // only for an override): a row that changed under the field would take its focus.
     let label = app.tr(field.label).to_string();
-    let label = if overridden { format!("{label} •") } else { label };
     let hover = source_text(app, &source, &file);
     ui_kit::row(ui, &label, |ui| {
         let response = match field.kind {
             Kind::Number { min, max, step, decimals, unit } => {
                 let mut draft = app.print_settings_window.cache.numbers.get(field.key).copied().unwrap_or(min);
-                let response = ui_kit::number_field(ui, &mut draft, min..=max, step, unit);
+                let response = ui_kit::number_field_on_commit(ui, &mut draft, min..=max, step, unit);
                 if response.changed() {
                     app.print_settings_window.cache.numbers.insert(field.key, draft);
                     set(app, field.key, write_back(Some(&current), format!("{draft:.decimals$}")));
@@ -686,7 +687,7 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
             }
             Kind::Percent => {
                 let mut draft = app.print_settings_window.cache.numbers.get(field.key).copied().unwrap_or(0.0);
-                let response = ui_kit::number_field(ui, &mut draft, 0.0..=1000.0, 1.0, "%");
+                let response = ui_kit::number_field_on_commit(ui, &mut draft, 0.0..=1000.0, 1.0, "%");
                 if response.changed() {
                     app.print_settings_window.cache.numbers.insert(field.key, draft);
                     set(app, field.key, write_back(Some(&current), format!("{draft:.0}%")));
@@ -695,7 +696,7 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
             }
             Kind::Int { min, max, unit } => {
                 let mut draft = app.print_settings_window.cache.ints.get(field.key).copied().unwrap_or(min);
-                let response = ui_kit::number_field(ui, &mut draft, min..=max, 1.0, unit);
+                let response = ui_kit::number_field_on_commit(ui, &mut draft, min..=max, 1.0, unit);
                 if response.changed() {
                     app.print_settings_window.cache.ints.insert(field.key, draft);
                     set(app, field.key, write_back(Some(&current), draft.to_string()));
@@ -732,7 +733,8 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
             }
         };
         response.on_hover_text(&hover);
-        if overridden && ui_kit::button(ui, "↺", ui_kit::Button::Small).on_hover_text(app.tr("print.reset_setting")).clicked() {
+        let reset = ui.add_enabled_ui(overridden, |ui| ui_kit::button(ui, "↺", ui_kit::Button::Small)).inner;
+        if reset.on_hover_text(app.tr("print.reset_setting")).clicked() {
             set(app, field.key, Value::Null);
         }
     });
