@@ -76,6 +76,17 @@ const INFILL_PATTERNS: &[(&str, &str)] = &[
     ("triangles", "print.opt.triangles"),
     ("concentric", "print.opt.concentric"),
 ];
+/// The line and curve fills the slicer draws solid layers with (top, bottom and internal solid).
+const SOLID_PATTERNS: &[(&str, &str)] = &[
+    ("monotonic", "print.opt.monotonic"),
+    ("monotonicline", "print.opt.monotonicline"),
+    ("rectilinear", "print.opt.rectilinear"),
+    ("alignedrectilinear", "print.opt.alignedrectilinear"),
+    ("concentric", "print.opt.concentric"),
+    ("hilbertcurve", "print.opt.hilbertcurve"),
+    ("archimedeanchords", "print.opt.archimedeanchords"),
+    ("octagramspiral", "print.opt.octagramspiral"),
+];
 const SUPPORT_TYPES: &[(&str, &str)] = &[
     ("normal(auto)", "print.opt.normal_auto"),
     ("tree(auto)", "print.opt.tree_auto"),
@@ -219,6 +230,9 @@ pub const SECTIONS: &[Section] = &[
             mm("bottom_shell_thickness", "print.key.bottom_shell_thickness", 0.0, 10.0),
             pct("sparse_infill_density", "print.key.sparse_infill_density"),
             pick("sparse_infill_pattern", "print.key.sparse_infill_pattern", INFILL_PATTERNS),
+            pick("internal_solid_infill_pattern", "print.key.internal_solid_infill_pattern", SOLID_PATTERNS),
+            pick("top_surface_pattern", "print.key.top_surface_pattern", SOLID_PATTERNS),
+            pick("bottom_surface_pattern", "print.key.bottom_surface_pattern", SOLID_PATTERNS),
             pct("infill_wall_overlap", "print.key.infill_wall_overlap"),
             pct("top_bottom_infill_wall_overlap", "print.key.top_bottom_infill_wall_overlap"),
             mm("sparse_infill_anchor", "print.key.sparse_infill_anchor", 0.0, 50.0),
@@ -400,7 +414,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     let title = app.tr("print.settings_title").to_string();
     let ok = app.tr("ui.heading_ok").to_string();
     let cancel = app.tr("ui.cancel").to_string();
-    let window = ui_kit::Window::new(egui::Id::new("sc_print_settings"), "settings", &title)
+    let window = ui_kit::Window::new(egui::Id::unique("sc_print_settings"), "settings", &title)
         .cards(3.0)
         .page_rows(24.0)
         .page_padding(egui::Margin {
