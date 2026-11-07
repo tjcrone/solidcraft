@@ -574,10 +574,19 @@ fn config_files(p: &Value, cmd: &str) -> Result<(Map<String, Value>, Map<String,
 fn config_text(s: &Session, p: &Value) -> Result<String> {
     let (mut config, _) = config_files(p, SLICE)?;
     config.extend(s.doc.print.overlay.iter().map(|(k, v)| (k.clone(), v.clone())));
-    match p.get("settings") {
-        None | Some(Value::Null) => {}
-        Some(Value::Object(over)) => config.extend(over.iter().map(|(k, v)| (k.clone(), v.clone()))),
+    let call = match p.get("settings") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(over)) => Some(over),
         Some(_) => return Err(bad(SLICE, "`settings` must be an object of setting keys")),
+    };
+    if let Some(over) = call {
+        config.extend(over.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+    // A workaround replaces the files' value; the design's or the call's own value wins over it.
+    for (key, value) in solidcraft_print::workarounds(&config) {
+        if !s.doc.print.overlay.contains_key(key) && !call.is_some_and(|o| o.contains_key(key)) {
+            config.insert(key.to_string(), value);
+        }
     }
     Ok(Value::Object(config).to_string())
 }
