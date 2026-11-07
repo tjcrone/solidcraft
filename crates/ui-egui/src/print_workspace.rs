@@ -717,7 +717,7 @@ pub(crate) fn confirm_print(app: &mut SolveApp, ctx: &egui::Context) {
     let printer = app.session.printer_host().map(|h| h.info().url).unwrap_or_default();
     let title = app.tr("print.confirm_print_title").to_string();
     let body = crate::i18n::format("print.confirm_print_body", &[("name", &name), ("printer", &printer)]);
-    let (closed, action) = crate::ui_kit::Confirm::new(egui::Id::new("sc_print_confirm"), "send", &title)
+    let (closed, action) = crate::ui_kit::Confirm::new(egui::Id::unique("sc_print_confirm"), "send", &title)
         .tone(crate::ui_kit::Tone::Warning)
         .actions(app.tr("print.confirm_print_ok"), app.tr("ui.cancel"), None)
         .show(ctx, true, |ui| {
@@ -741,7 +741,7 @@ pub(crate) fn address_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     ui.label(app.tr("print.printer_url"));
     let before = app.print_workspace.settings.printer_url.clone();
     let hint = app.tr("print.printer_url_hint").to_string();
-    crate::ui_kit::bounded_cell_editor(ui, ui.id().with("print_printer_url"), &mut app.print_workspace.settings.printer_url, &hint, false, 256);
+    crate::ui_kit::bounded_cell_editor(ui, ui.scope_id().with("print_printer_url"), &mut app.print_workspace.settings.printer_url, &hint, false, 256);
     if app.print_workspace.settings.printer_url != before {
         save_settings(app);
     }
@@ -862,7 +862,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let rect = ui.max_rect();
     app.viewport.rect = Some(rect);
     crate::viewport::refresh_layout(app, ui.ctx());
-    let response = ui.interact(rect, ui.id().with("print_preview"), Sense::click_and_drag());
+    let response = ui.interact(rect, ui.scope_id().with("print_preview"), Sense::click_and_drag());
     load_settings(app);
     bed_info(app);
     sync_view(app);
@@ -919,6 +919,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             hover_tint: [0.0; 3],
             selection_tint: [0.0; 3],
             sky: [0.0; 4],
+            moving: None,
         });
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         Ok(())
