@@ -86,12 +86,14 @@ sysinfo = { version = "0.40.1", default-features = false, features = ["system"] 
 
 # slicing engine for 3D printing (Apache-2.0): SlicerX's sx-core, which is not on crates.io. The
 # lock file follows the branch; the build routine moves it with every SolidCraft update. Until
-# upstream merges the G-code header date (the slicerx-oss/slicerx pull request from Tim's
-# fix/header-date, which Moonraker needs to read the time estimate), the branch is that one on
-# Tim's fork, rebased onto upstream main at each move; after the merge it is upstream's main.
+# upstream merges our fixes, the branch is fix/concentric-gaps on Tim's fork: the G-code header
+# date Moonraker needs to read the time estimate (also alone on fix/header-date, the
+# slicerx-oss/slicerx pull request) with concentric internal solid infill filled by
+# variable-width beads on top, rebased onto upstream main at each move; after the merges it is
+# upstream's main.
 # Only crates/print uses it. Default features off: `import` and `sleipnir` would pull in sx-geom,
 # and `parallel` (rayon) is turned on by crates/print for native builds only.
-sx-core = { git = "https://github.com/tjcrone/slicerx", branch = "fix/header-date", default-features = false }
+sx-core = { git = "https://github.com/tjcrone/slicerx", branch = "fix/concentric-gaps", default-features = false }
 
 # packages (3MF)
 zip = { version = "9", default-features = false, features = ["deflate"] }
