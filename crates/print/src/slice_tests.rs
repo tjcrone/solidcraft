@@ -238,3 +238,28 @@ fn pieces_of_one_extrusion_join_into_one_path() {
     assert_eq!(points, [4, 2, 2, 2]);
     assert_eq!(joined[0].points, [[0.0, 0.0], [10.0, 0.0], [10.0, 1.0], [0.0, 1.0]]);
 }
+
+#[test]
+fn a_ring_whose_width_steps_a_little_joins_into_one_closed_path() {
+    use crate::toolpaths::{Feature, Path};
+    let piece = |width: f32, pts: &[[i32; 2]]| {
+        let points: Vec<[f32; 2]> = pts.iter().map(|p| [p[0] as f32, p[1] as f32]).collect();
+        let path = Path { feature: Some(Feature::InternalSolid), tool: 1, width_mm: width, speed_mm_s: 50.0, points };
+        (path, pts[0], pts[pts.len() - 1])
+    };
+    // A square ring handed over in four pieces whose widths differ by a thousandth or two, as a concentric
+    // ring's variable-width bead does.
+    let joined = crate::sx::join_touching([
+        piece(0.479, &[[0, 0], [10, 0]]),
+        piece(0.480, &[[10, 0], [10, 10]]),
+        piece(0.482, &[[10, 10], [0, 10]]),
+        piece(0.480, &[[0, 10], [0, 0]]),
+        // A real change of width still starts a new path, though it touches.
+        piece(0.42, &[[0, 0], [0, -10]]),
+    ]);
+    assert_eq!(joined.len(), 2, "{joined:?}");
+    assert_eq!(joined[0].points.first(), joined[0].points.last(), "the ring comes back closed");
+    assert_eq!(joined[0].points.len(), 5);
+    assert!((joined[0].width_mm - 0.48025).abs() < 1e-5, "the width averaged over the length: {}", joined[0].width_mm);
+    assert!((joined[1].width_mm - 0.42).abs() < 1e-6);
+}
