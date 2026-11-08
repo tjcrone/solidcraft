@@ -144,24 +144,46 @@ fn toolpaths(out: &api::SliceOutput) -> Toolpaths {
 
 /// One path per continuous extrusion. sx-core hands some extrusions over a piece at a time (the
 /// internal solid infill above all: a zigzag as one path per stroke), each piece starting exactly
-/// where the last ended, with the same feature, tool, width and speed. Joined, a zigzag's turns are
-/// corners of one path rather than ends of many. `pieces` are paths with their first and last
-/// points in the engine's integer units, so "exactly" is exact.
+/// where the last ended, with the same feature, tool and speed. Joined, a zigzag's turns are
+/// corners of one path rather than ends of many. A width that changes by less than
+/// [`SAME_WIDTH_MM`] (a concentric ring's variable-width bead, which steps by a thousandth or two
+/// around it) keeps the path whole, at the pieces' width averaged over their length: split, every
+/// step was two end caps facing each other with a gap between them. `pieces` are paths with their
+/// first and last points in the engine's integer units, so "exactly" is exact.
 pub(crate) fn join_touching(pieces: impl IntoIterator<Item = (Path, [i32; 2], [i32; 2])>) -> Vec<Path> {
-    let mut out: Vec<Path> = Vec::new();
+    let length = |p: &Path| p.points.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1])).sum::<f32>();
+    // Each path out, with its pieces' width times length and their length.
+    let mut out: Vec<(Path, f32, f32)> = Vec::new();
     let mut end: Option<[i32; 2]> = None;
     for (path, first, last) in pieces {
+        let len = length(&path);
         let same = |a: &Path| {
-            a.feature == path.feature && a.tool == path.tool && a.width_mm.to_bits() == path.width_mm.to_bits() && a.speed_mm_s.to_bits() == path.speed_mm_s.to_bits()
+            a.feature == path.feature
+                && a.tool == path.tool
+                && (a.width_mm - path.width_mm).abs() < SAME_WIDTH_MM
+                && a.speed_mm_s.to_bits() == path.speed_mm_s.to_bits()
         };
         match out.last_mut() {
-            Some(previous) if end == Some(first) && same(previous) => previous.points.extend(path.points.iter().skip(1)),
-            _ => out.push(path),
+            Some((previous, area, total)) if end == Some(first) && same(previous) => {
+                *area += path.width_mm * len;
+                *total += len;
+                if *total > 0.0 {
+                    previous.width_mm = *area / *total;
+                }
+                previous.points.extend(path.points.iter().skip(1));
+            }
+            _ => {
+                let area = path.width_mm * len;
+                out.push((path, area, len));
+            }
         }
         end = Some(last);
     }
-    out
+    out.into_iter().map(|(p, _, _)| p).collect()
 }
+
+/// Widths closer than this, mm, are one bead's ([`join_touching`]): half the preview's width step.
+const SAME_WIDTH_MM: f32 = 0.005;
 
 fn feature(f: api::Feature) -> Option<Feature> {
     Some(match f {
