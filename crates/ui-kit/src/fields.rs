@@ -2143,7 +2143,7 @@ pub fn mixed_slider(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusiv
 /// input, keyboard and accessibility, with the kit painting the track and thumb from tokens. The
 /// minimum is at the bottom. `track` is where it stands; nothing is drawn behind it, so the
 /// canvas shows through. Tokens: text_dim, accent, panel, space_4/8/2.
-pub(crate) fn vertical_slider<T: egui::emath::Numeric>(
+pub fn vertical_slider<T: egui::emath::Numeric>(
     ui: &mut Ui,
     track: egui::Rect,
     value: &mut T,
@@ -2182,7 +2182,7 @@ pub(crate) fn vertical_slider<T: egui::emath::Numeric>(
     let r = if response.hovered() || response.dragged() { t.space_8 + t.space_2 } else { t.space_8 };
     painter.circle(egui::pos2(x, y), r, t.accent, egui::Stroke::new(t.space_2, t.panel));
     publish(ui, &response, egui::Role::Slider);
-    response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), value.to_f64(), crate::i18n::tr_label(label(ui))));
+    response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), value.to_f64(), solidcraft_ui_text::tr_label(label(ui))));
     response
 }
 
