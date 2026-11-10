@@ -10,8 +10,8 @@ use serde_json::json;
 use crate::{
     SolveApp,
     print_workspace::{Job, JobKind},
-    theme::Tokens,
 };
+use solidcraft_theme::Tokens;
 
 #[derive(Default)]
 pub struct State {
@@ -87,7 +87,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         Ok(true) => None,
         Ok(false) if app.printer_dashboard.watching.is_none() => Some(app.tr("printer.no_camera").to_string()),
         Ok(false) => Some(app.tr("printer.camera_waiting").to_string()),
-        Err(e) => Some(crate::i18n::format("printer.camera_error", &[("error", &e)])),
+        Err(e) => Some(solidcraft_ui_text::format("printer.camera_error", &[("error", &e)])),
     };
     if let Some((_, texture)) = &app.printer_dashboard.texture
         && let Some(size) = app.printer_dashboard.size
@@ -190,14 +190,14 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
                     "{:.0} % · {} · {}",
                     progress * 100.0,
                     crate::print_workspace::hms(elapsed),
-                    crate::i18n::format("printer.remaining", &[("time", &crate::print_workspace::hms(r))])
+                    solidcraft_ui_text::format("printer.remaining", &[("time", &crate::print_workspace::hms(r))])
                 ),
                 None => format!("{:.0} % · {}", progress * 100.0, crate::print_workspace::hms(elapsed)),
             });
         }
     } else {
         let text = match status["age_s"].as_f64() {
-            Some(a) => crate::i18n::format("print.unreachable_since", &[("time", &crate::print_workspace::hms(a))]),
+            Some(a) => solidcraft_ui_text::format("print.unreachable_since", &[("time", &crate::print_workspace::hms(a))]),
             None => app.tr("print.unreachable").to_string(),
         };
         ui.colored_label(t.warning, text);

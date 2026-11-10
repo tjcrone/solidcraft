@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use crate::{SolveApp, theme::Tokens, ui_kit};
+use crate::{SolveApp, ui_kit};
+use solidcraft_theme::Tokens;
 
 /// What a field edits.
 #[derive(Clone, Copy)]
@@ -323,48 +324,48 @@ const _: () = assert!(PAGES.len() == SECTIONS.len() + 2);
 
 const PAGES: &[ui_kit::WindowPage<SolveApp>] = &[
     ui_kit::WindowPage {
-        icon: "settings",
+        icon: ui_kit::Icon::Kit("settings"),
         label: "print.page_files",
         group: Some("print.section_profiles"),
         handle: "print:page:Files",
         scroll: true,
-        draw: page::<0>,
+        draw: &page::<0>,
     },
     ui_kit::WindowPage {
-        icon: "ws_print",
+        icon: ui_kit::Icon::Kit("ws_print"),
         label: "print.page_printer",
         group: Some("print.section_printer"),
         handle: "print:page:Printer",
         scroll: true,
-        draw: page::<1>,
+        draw: &page::<1>,
     },
     ui_kit::WindowPage {
-        icon: "settings",
+        icon: ui_kit::Icon::Kit("settings"),
         label: "print.page_filament",
         group: Some("print.section_filament"),
         handle: "print:page:Filament",
         scroll: true,
-        draw: page::<2>,
+        draw: &page::<2>,
     },
     ui_kit::WindowPage {
-        icon: "settings",
+        icon: ui_kit::Icon::Kit("settings"),
         label: "print.page_quality",
         group: Some("print.section_process"),
         handle: "print:page:Quality",
         scroll: true,
-        draw: page::<3>,
+        draw: &page::<3>,
     },
-    ui_kit::WindowPage { icon: "settings", label: "print.page_strength", group: None, handle: "print:page:Strength", scroll: true, draw: page::<4> },
-    ui_kit::WindowPage { icon: "settings", label: "print.page_speed", group: None, handle: "print:page:Speed", scroll: true, draw: page::<5> },
-    ui_kit::WindowPage { icon: "settings", label: "print.page_support", group: None, handle: "print:page:Support", scroll: true, draw: page::<6> },
-    ui_kit::WindowPage { icon: "settings", label: "print.page_others", group: None, handle: "print:page:Others", scroll: true, draw: page::<7> },
+    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_strength", group: None, handle: "print:page:Strength", scroll: true, draw: &page::<4> },
+    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_speed", group: None, handle: "print:page:Speed", scroll: true, draw: &page::<5> },
+    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_support", group: None, handle: "print:page:Support", scroll: true, draw: &page::<6> },
+    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_others", group: None, handle: "print:page:Others", scroll: true, draw: &page::<7> },
     ui_kit::WindowPage {
-        icon: "settings",
+        icon: ui_kit::Icon::Kit("settings"),
         label: "print.page_advanced",
         group: Some("print.section_advanced"),
         handle: "print:page:Advanced",
         scroll: true,
-        draw: page::<8>,
+        draw: &page::<8>,
     },
 ];
 
@@ -428,9 +429,10 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     let mut selected = app.print_settings_window.section;
     let mut reset_all = false;
     let overridden = app.session.doc.print.overlay.len();
-    let (closed, action) = window.show_pages_with_header(ctx, &mut selected, PAGES, app, search_header, clear_search, None, |ui| {
-        let label = crate::i18n::tr("print.reset_all_settings");
-        if ui_kit::button(ui, label, ui_kit::Button::Enabled(overridden > 0)).on_hover_text(crate::i18n::tr("print.reset_all_hint")).clicked() {
+    let hooks = solidcraft_ui_kit::panel::PageListHooks { header: &search_header, on_select: &|app: &mut SolveApp, _| clear_search(app), sidebar_footer: None };
+    let (closed, action) = window.show_pages_with_header(ctx, &mut selected, PAGES, app, &hooks, |ui| {
+        let label = solidcraft_ui_text::tr("print.reset_all_settings");
+        if ui_kit::button(ui, label, ui_kit::Button::Enabled(overridden > 0)).on_hover_text(solidcraft_ui_text::tr("print.reset_all_hint")).clicked() {
             reset_all = true;
         }
     });
@@ -510,7 +512,7 @@ fn search_row(app: &mut SolveApp, ui: &mut egui::Ui) {
 
 /// A field matches when its key or its label holds every word of the search.
 fn matches(filter: &str, field: &Field) -> bool {
-    let label = crate::i18n::tr(field.label).to_lowercase();
+    let label = solidcraft_ui_text::tr(field.label).to_lowercase();
     filter.split_whitespace().all(|word| {
         let word = word.to_lowercase();
         field.key.contains(&word) || label.contains(&word)
@@ -657,7 +659,7 @@ fn source_text(app: &SolveApp, source: &str, file: &str) -> String {
         "design" => app.tr("print.source_design").to_string(),
         "file" => {
             let name = std::path::Path::new(file).file_name().and_then(|s| s.to_str()).unwrap_or(file);
-            crate::i18n::format("print.source_file", &[("file", name)])
+            solidcraft_ui_text::format("print.source_file", &[("file", name)])
         }
         _ => app.tr("print.source_default").to_string(),
     }
@@ -718,7 +720,7 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
                 let mut picked: Option<&'static str> = None;
                 let response = ui_kit::dropdown_menu(ui, ("print_setting", field.key), &shown, |ui| {
                     for (option, label) in options {
-                        if ui_kit::list_picker(ui, option, crate::i18n::tr(label), *option == value).clicked() {
+                        if ui_kit::list_picker(ui, option, solidcraft_ui_text::tr(label), *option == value).clicked() {
                             picked = Some(option);
                             ui.close();
                         }
@@ -860,7 +862,7 @@ mod tests {
             }
         }
         for id in ids {
-            assert_ne!(crate::i18n::tr(id), id, "no English text for `{id}`");
+            assert_ne!(solidcraft_ui_text::tr(id), id, "no English text for `{id}`");
         }
     }
 

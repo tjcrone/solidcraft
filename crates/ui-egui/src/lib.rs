@@ -3578,7 +3578,7 @@ impl SolveApp {
         if print_workspace::active(self) {
             self.cancel_view_animation();
             if let Some(b) = print_workspace::bounds(self) {
-                self.cam.fit(&b);
+                self.cam.fit(&solidcraft_engine::render::view_bounds(&b));
             }
             return;
         }

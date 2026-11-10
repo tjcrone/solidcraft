@@ -15,9 +15,11 @@ use solidcraft_engine::held_slice::HeldSlice;
 use solidcraft_engine::print::{Feature, Layer, Toolpaths};
 use solidcraft_engine::printer_host::PrinterHost;
 
-use crate::gpu::{Frame, GpuScene, PaletteIndex, SceneSlot, ViewportCallback};
+use crate::gpu::{Frame, GpuScene, PaletteIndex, SceneSlot};
+use solidcraft_viewport_egui::ViewportCallback;
 use crate::ui_kit::{Container, Edge, Surface};
-use crate::{SolveApp, theme::Tokens};
+use crate::SolveApp;
+use solidcraft_theme::Tokens;
 
 /// What the graphics device lets one preview upload: `total` bytes in all (Render's budget for
 /// the device), and at most `buffer` bytes of any one bead piece's placements, which go to the
@@ -174,7 +176,7 @@ pub fn job_line(app: &mut SolveApp, ui: &mut egui::Ui, printer_state: &str) {
     let (id, warning) = job_text(job.kind, &job_state, printer_state, job.since.elapsed());
     let text = if id.is_empty() {
         if job.kind == JobKind::Upload && job_state == "done" && reply["started"] == true {
-            crate::i18n::format("print.job_started", &[("message", &message)])
+            solidcraft_ui_text::format("print.job_started", &[("message", &message)])
         } else {
             message
         }
@@ -656,11 +658,11 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
 fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     ui.heading(app.tr("print.prepare_title"));
     let n = app.print_workspace.settings.config_files.len();
-    let files = if n == 0 { app.tr("print.config_none").to_string() } else { crate::i18n::format("print.config_count", &[("n", &n.to_string())]) };
+    let files = if n == 0 { app.tr("print.config_none").to_string() } else { solidcraft_ui_text::format("print.config_count", &[("n", &n.to_string())]) };
     ui.label(files);
     let overrides = app.session.doc.print.overlay.len();
     if overrides > 0 {
-        ui.small(crate::i18n::format("print.overrides_count", &[("n", &overrides.to_string())]));
+        ui.small(solidcraft_ui_text::format("print.overrides_count", &[("n", &overrides.to_string())]));
     }
     ui.separator();
     ui.heading(app.tr("print.placement_title"));
@@ -716,7 +718,7 @@ pub(crate) fn confirm_print(app: &mut SolveApp, ctx: &egui::Context) {
     let name = app.session.print_slice().map(|_| solidcraft_engine::printer_host::gcode_file_name(&app.session.doc.name)).unwrap_or_default();
     let printer = app.session.printer_host().map(|h| h.info().url).unwrap_or_default();
     let title = app.tr("print.confirm_print_title").to_string();
-    let body = crate::i18n::format("print.confirm_print_body", &[("name", &name), ("printer", &printer)]);
+    let body = solidcraft_ui_text::format("print.confirm_print_body", &[("name", &name), ("printer", &printer)]);
     let (closed, action) = crate::ui_kit::Confirm::new(egui::Id::unique("sc_print_confirm"), "send", &title)
         .tone(crate::ui_kit::Tone::Warning)
         .actions(app.tr("print.confirm_print_ok"), app.tr("ui.cancel"), None)
@@ -781,7 +783,7 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     } else {
         let age = status["age_s"].as_f64();
         let text = match age {
-            Some(a) => crate::i18n::format("print.unreachable_since", &[("time", &hms(a))]),
+            Some(a) => solidcraft_ui_text::format("print.unreachable_since", &[("time", &hms(a))]),
             None => app.tr("print.unreachable").to_string(),
         };
         ui.colored_label(t.warning, text);
@@ -913,7 +915,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             access: None,
             outline: false,
             ao_radius: if app.preferences.ambient_occlusion { (bounds.diagonal() * 0.04).clamp(1e-4, 1e6) as f32 } else { 0.0 },
-            ao_samples: solidcraft_gpu::view::AO_SAMPLES,
+            ao_samples: solidcraft_viewport_gpu::view::AO_SAMPLES,
             eye: [eye.x as f32, eye.y as f32, eye.z as f32, if camera.fov > 0.0 { 1.0 } else { 0.0 }],
             ssaa: 1.0,
             hover_tint: [0.0; 3],
