@@ -628,7 +628,8 @@ pub fn hms(seconds: f64) -> String {
     format!("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
 }
 
-pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
+/// The Prepare or Preview panel at the window's right edge; the rectangle it takes.
+pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
     load_settings(app);
     Container::new(ui.ctx(), Surface::Panel)
         .edge("sc_print_settings", Edge::Right)
@@ -651,7 +652,9 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                     }
                 });
             });
-        });
+        })
+        .response
+        .rect
 }
 
 /// Prepare: the profiles, where the part sits on the bed, and the Slice button.
@@ -887,6 +890,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         let eye = camera.eye();
         let ppp = ui.ctx().pixels_per_point();
         let slot = app.print_workspace.slot.clone();
+        let view_proj = camera.view_proj(f64::from(rect.width() / rect.height().max(1.0)), radius);
         let callback = ViewportCallback(Frame {
             product_lights: None,
             product: true,
@@ -902,7 +906,8 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             pv_key: 0,
             pv_slot: slot,
             pv_hide: false,
-            view_proj: camera.view_proj(f64::from(rect.width() / rect.height().max(1.0)), radius).to_f32(),
+            view_proj: view_proj.to_f32(),
+            turned_depth: Some(view_proj.turned_depth_f32()),
             back: camera.back().to_f32(),
             size_px: [rect.width() * ppp, rect.height() * ppp],
             // The slider leaves the layers above out of the scene itself (`upload`), so nothing is cut.

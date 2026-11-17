@@ -2180,7 +2180,9 @@ fn doc_settings(app: &mut SolveApp, rows: &mut Rows<'_>, depth: usize) {
         }
     }
     let print = app.tr("print.browser_row").to_string();
-    if draw_row(ui, ui.scope_id().with("print_settings"), &Row { depth: depth + 1, icon: "ws_print", label: &print, ..Default::default() }).clicked {
+    if node_row(rows, Spec { key: "print_settings", ..Default::default() }, Row { depth: depth + 1, icon: "ws_print", label: &print, ..Default::default() })
+        .clicked
+    {
         app.start("print.settings.set");
     }
 }
