@@ -133,8 +133,8 @@ fn camera_frame(app: &mut SolveApp, ctx: &egui::Context) -> Result<bool, String>
     Ok(true)
 }
 
-/// The panel: the printer's state and temperatures, and the controls.
-pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
+/// The panel: the printer's state and temperatures, and the controls; the rectangle it takes.
+pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
     use crate::ui_kit::{Container, Edge, Surface};
     Container::new(ui.ctx(), Surface::Panel)
         .edge("sc_printer_dashboard", Edge::Right)
@@ -152,7 +152,9 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                     }
                 });
             });
-        });
+        })
+        .response
+        .rect
 }
 
 fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
