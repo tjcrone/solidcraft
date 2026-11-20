@@ -420,25 +420,6 @@ fn bed_info(app: &mut SolveApp) {
     app.print_workspace.bed = rect.map(|rect| BedInfo { key, rect });
 }
 
-pub fn switch(app: &mut SolveApp, workspace: &str) -> Result<(), String> {
-    match workspace {
-        "print" => enter(app, true),
-        "render" => {
-            if active(app) {
-                enter(app, false)?;
-            }
-            crate::render_workspace::enter(app, true)
-        }
-        _ => {
-            if active(app) {
-                enter(app, false)
-            } else {
-                crate::render_workspace::enter(app, false)
-            }
-        }
-    }
-}
-
 /// Another design opened: the view starts over, the settings files stay.
 pub fn reset_document(app: &mut SolveApp) {
     app.print_workspace.view_offset = [0.0; 3];
@@ -911,7 +892,8 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             back: camera.back().to_f32(),
             size_px: [rect.width() * ppp, rect.height() * ppp],
             // The slider leaves the layers above out of the scene itself (`upload`), so nothing is cut.
-            clip: [0.0; 4],
+            clip: [[0.0; 4]; solidcraft_viewport_gpu::view::MAX_SECTION_PLANES],
+            clip_hatch: [0; solidcraft_viewport_gpu::view::MAX_SECTION_PLANES],
             cap: [0.0; 4],
             images: Vec::new(),
             clouds: Vec::new(),
@@ -1292,6 +1274,7 @@ impl Layered {
                 look: m.look,
                 closed: m.closed,
                 levels: m.levels.clone(),
+                edges: None,
             })
             .collect();
         out
@@ -1337,6 +1320,8 @@ impl Instancer {
                 levels: Vec::new(),
                 // Bead pieces have no bottom faces and no section cuts them.
                 closed: false,
+                // Beads are drawn as surfaces only: they have no edge lines.
+                edges: None,
             });
             self.meshes.len() - 1
         });

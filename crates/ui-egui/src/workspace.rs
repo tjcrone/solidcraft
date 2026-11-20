@@ -51,14 +51,26 @@ pub fn tab_label(tab: &str) -> &str {
 
 /// Workspace switching has one lifecycle for menus and automation.
 pub fn enter(app: &mut crate::SolveApp, workspace: &str) -> Result<(), String> {
+    // Print is left before another workspace is entered, as Render and Drawing leave each other.
+    if workspace != "print" && crate::print_workspace::active(app) {
+        crate::print_workspace::enter(app, false)?;
+    }
     if app.preferences.workspace_follows_view {
-        return focus_workspace(app, workspace);
+        if workspace != "print" {
+            return focus_workspace(app, workspace);
+        }
+        // Print shows in a model view: go to one first.
+        focus_workspace(app, "design")?;
     }
     enter_legacy(app, workspace)
 }
 
 fn enter_legacy(app: &mut crate::SolveApp, workspace: &str) -> Result<(), String> {
     match workspace {
+        "print" => {
+            crate::drawing_workspace::enter(app, false)?;
+            crate::print_workspace::enter(app, true)
+        }
         "drawing" => {
             if crate::render_workspace::active(app) {
                 crate::render_workspace::enter(app, false)?;
@@ -70,7 +82,7 @@ fn enter_legacy(app: &mut crate::SolveApp, workspace: &str) -> Result<(), String
             crate::drawing_workspace::enter(app, false)?;
             crate::render_workspace::enter(app, workspace == "render")
         }
-        _ => Err("workspace must be design, render or drawing".into()),
+        _ => Err("workspace must be design, render, drawing or print".into()),
     }
 }
 
