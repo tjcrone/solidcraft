@@ -4028,7 +4028,7 @@
   "print.return_design": "返回设计",
   "print.search": "搜索设置",
   "print.search_none": "没有匹配的设置。",
-  "print.settings_title": "3D 打印设置",
+  "print.settings_title": "设置",
   "print.show_travels": "显示空驶移动",
   "print.slice_from_prepare": "切片后，此处显示刀具路径。",
   "print.slice_title": "预览",
