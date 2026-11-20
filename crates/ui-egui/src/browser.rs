@@ -2341,12 +2341,6 @@ fn doc_settings(app: &mut SolveApp, rows: &mut Rows<'_>, depth: usize) {
             app.start("document.metadata");
         }
     }
-    let print = app.tr("print.browser_row").to_string();
-    if node_row(rows, Spec { key: "print_settings", ..Default::default() }, Row { depth: depth + 1, icon: "ws_print", label: &print, ..Default::default() })
-        .clicked
-    {
-        app.start("print.settings.set");
-    }
 }
 
 /// The origin point, axes and planes, as `(key, icon, thing lit for it)`.
