@@ -6939,7 +6939,7 @@ dependencies = [
 [[package]]
 name = "sx-boostvoronoi"
 version = "0.12.1"
-source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#1e26bc9b0aaa2a04e6f922671408a03ddcb50249"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#00a7f38664978b4d750587aff099d56994b2535d"
 dependencies = [
  "approx",
  "libm",
@@ -6954,8 +6954,8 @@ dependencies = [
 
 [[package]]
 name = "sx-core"
-version = "0.2.7"
-source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#1e26bc9b0aaa2a04e6f922671408a03ddcb50249"
+version = "0.2.10"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#00a7f38664978b4d750587aff099d56994b2535d"
 dependencies = [
  "libm",
  "miniz_oxide 0.9.1",
@@ -6971,7 +6971,7 @@ dependencies = [
 [[package]]
 name = "sx-cpp-map"
 version = "0.2.0"
-source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#1e26bc9b0aaa2a04e6f922671408a03ddcb50249"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#00a7f38664978b4d750587aff099d56994b2535d"
 dependencies = [
  "smallvec",
  "thiserror 2.0.21",
@@ -6980,7 +6980,7 @@ dependencies = [
 [[package]]
 name = "sx-i-overlay"
 version = "9.0.0"
-source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#1e26bc9b0aaa2a04e6f922671408a03ddcb50249"
+source = "git+https://github.com/tjcrone/slicerx?branch=fix%2Fconcentric-gaps#00a7f38664978b4d750587aff099d56994b2535d"
 dependencies = [
  "i_float",
  "i_key_sort",
