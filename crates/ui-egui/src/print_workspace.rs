@@ -695,6 +695,10 @@ fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             }
         });
     });
+    ui.separator();
+    if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Primary).clicked() {
+        slice(app);
+    }
 }
 
 /// Preview: the result, the toolpath legend, and the way to the printer.
@@ -711,6 +715,11 @@ fn slice_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             toolpath_controls(app, ui, &held);
             ui.separator();
             printer_rows(app, ui);
+            ui.separator();
+            // Print asks first, as the ribbon's button does.
+            if crate::ui_kit::button(ui, app.tr("print.confirm_print_ok"), crate::ui_kit::Button::Primary).clicked() {
+                app.print_workspace.confirm_print = true;
+            }
         }
     }
 }
