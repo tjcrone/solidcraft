@@ -1475,6 +1475,7 @@ impl crate::SolveApp {
             None
         };
         crate::shell::register_panel(self, "print:panel", print_panel);
+        self.print_workspace.panel_rect = print_panel;
         crate::ui_kit::Container::new(ui.ctx(), crate::ui_kit::Surface::Viewport)
             .central()
             .frame(crate::ui_kit::Container::new(ui.ctx(), crate::ui_kit::Surface::Viewport).edge_frame(egui::Color32::TRANSPARENT))
