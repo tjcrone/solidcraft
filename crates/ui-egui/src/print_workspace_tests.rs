@@ -310,37 +310,6 @@ fn beads_of_nearly_one_width_share_their_pieces() {
     assert!((bead_half(0.42f32.next_down()) - bead_half(0.42)).abs() < 1e-9);
 }
 
-/// The Print Settings window applies changes as they are made; Cancel puts the design's overrides
-/// and the settings files back as they were when it opened, and OK keeps them.
-#[test]
-fn print_settings_cancel_restores_and_ok_keeps() {
-    use serde_json::json;
-    let mut s = solidcraft_engine::Session::default();
-    s.execute("print.settings.set", &json!({"set": {"layer_height": 0.2}})).unwrap_or_else(|e| panic!("{e}"));
-    let mut app = SolveApp::new(s, crate::Services::default());
-    app.print_workspace.settings.config_files = vec!["/profiles/printer.json".into()];
-    let overlay = |app: &SolveApp| app.session.doc.print.overlay.clone();
-    let before = overlay(&app);
-
-    crate::print_settings_window::open(&mut app);
-    app.run("print.settings.set", json!({"set": {"layer_height": 0.12, "wall_loops": 4}})).unwrap_or_else(|e| panic!("{e}"));
-    app.print_workspace.settings.config_files.push("/profiles/filament.json".into());
-    crate::print_settings_window::close(&mut app, false);
-    assert_eq!(overlay(&app), before, "Cancel puts the overrides back");
-    assert_eq!(app.print_workspace.settings.config_files, vec!["/profiles/printer.json".to_string()], "and the settings files");
-
-    crate::print_settings_window::open(&mut app);
-    app.run("print.settings.clear", json!({})).unwrap_or_else(|e| panic!("{e}"));
-    crate::print_settings_window::close(&mut app, false);
-    assert_eq!(overlay(&app), before, "Cancel brings back overrides that were cleared");
-
-    crate::print_settings_window::open(&mut app);
-    app.run("print.settings.set", json!({"set": {"wall_loops": 3}})).unwrap_or_else(|e| panic!("{e}"));
-    crate::print_settings_window::close(&mut app, true);
-    assert_eq!(overlay(&app).get("wall_loops"), Some(&json!(3)), "OK keeps the change");
-    assert!(!app.print_settings_window.open);
-}
-
 /// Print from the ribbon (or a shortcut) asks before anything goes to the printer: it opens the
 /// "start printing?" question and starts no upload, with a slice ready and a printer that would
 /// take it.
@@ -392,15 +361,15 @@ fn print_from_the_ribbon_asks_first() {
     assert_eq!(*host.0.lock().unwrap_or_else(|e| e.into_inner()), 0, "nothing was sent before the answer");
 }
 
-/// A number typed into the Print Settings window lands whole, as one change: the first key press
-/// used to turn the field into an override, which rebuilt its row and took the focus, so "50"
-/// became 5.
+/// A number typed into the Print workspace's settings card lands whole, as one change: the first
+/// key press used to turn the field into an override, which rebuilt its row and took the focus,
+/// so "50" became 5.
 #[test]
 fn a_typed_print_setting_lands_whole_as_one_change() {
     use serde_json::json;
     let mut h = crate::scenario::Harness::new();
-    crate::print_settings_window::open(&mut h.app);
-    h.app.print_settings_window.filter = "Inner wall".into();
+    crate::workspace::enter(&mut h.app, "print").unwrap_or_else(|e| panic!("{e}"));
+    h.app.print_settings_panel.filter = "Inner wall".into();
     h.frames(3);
     h.step(&json!({"click": {"handle": "dialog:Inner wall"}})).unwrap_or_else(|e| panic!("{e}"));
     h.frames(2);
