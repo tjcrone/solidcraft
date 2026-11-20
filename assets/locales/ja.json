@@ -3826,7 +3826,7 @@
   "print.return_design": "デザインに戻る",
   "print.search": "設定を検索",
   "print.search_none": "一致する設定はありません。",
-  "print.settings_title": "3D印刷設定",
+  "print.settings_title": "設定",
   "print.show_travels": "移動を表示",
   "print.slice_from_prepare": "スライスすると、ここにツールパスが表示されます。",
   "print.slice_title": "プレビュー",
