@@ -265,7 +265,7 @@ mod primitive_placement;
 #[cfg(test)]
 mod primitive_units_tests;
 mod print_face_ui;
-pub mod print_settings_window;
+pub mod print_settings_panel;
 pub mod print_workspace;
 pub mod printer_dashboard;
 pub(crate) mod quick_measure;
@@ -698,7 +698,7 @@ pub struct SolveApp {
     pub render_workspace: render_workspace::State,
     pub drawing_workspace: drawing_workspace::State,
     pub print_workspace: print_workspace::State,
-    pub print_settings_window: print_settings_window::PrintSettingsWindow,
+    pub print_settings_panel: print_settings_panel::PrintSettingsPanel,
     pub printer_dashboard: printer_dashboard::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
@@ -1073,7 +1073,7 @@ impl SolveApp {
             render_workspace,
             drawing_workspace: Default::default(),
             print_workspace: print_workspace::State::default(),
-            print_settings_window: Default::default(),
+            print_settings_panel: Default::default(),
             printer_dashboard: printer_dashboard::State::default(),
             tool: None,
             dialog: None,
@@ -2438,10 +2438,12 @@ impl SolveApp {
             dialogs_library::start_export(self);
             return;
         }
-        // The Print Settings window is the one print dialog; the other print commands take
-        // their settings from the Print workspace.
+        // The print settings are a card of the Print workspace; the other print commands take
+        // their settings from the workspace too.
         if id == "print.settings.set" {
-            print_settings_window::open(self);
+            if let Err(e) = workspace::enter(self, "print") {
+                self.set_status(e, true);
+            }
             return;
         }
         if matches!(id, "print.slice" | "print.save" | "print.upload" | "print.start" | "print.cancel" | "print.place") {
@@ -4308,7 +4310,6 @@ impl SolveApp {
         dialogs::show(self, ui.ctx());
         issue_report::CadInput::block(self, ui, report_input);
         params_dialog::show(self, ui.ctx());
-        print_settings_window::show(self, ui.ctx());
         // Print's "start printing?" question, on whichever Print tab it was asked from.
         print_workspace::confirm_print(self, ui.ctx());
         design_properties::show(self, ui.ctx());

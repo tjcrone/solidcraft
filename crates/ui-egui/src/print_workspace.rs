@@ -623,11 +623,12 @@ pub fn hms(seconds: f64) -> String {
 }
 
 /// The frame of Print's panels: the floating card the other workspaces' panels have, standing a
-/// gap in from the window's right and bottom edges.
-pub(crate) fn panel_frame(ctx: &egui::Context) -> egui::Frame {
+/// gap in from the window's edge on its `side` and from the bottom.
+pub(crate) fn panel_frame(ctx: &egui::Context, side: crate::frame::Side) -> egui::Frame {
     let card = Container::floating_card(Surface::Panel);
     let gap = card.gap() as i8;
-    card.frame(ctx, Tokens::get().panel, crate::frame::Side::Right).inner_margin(10).outer_margin(egui::Margin { left: 0, right: gap, top: 0, bottom: gap })
+    let (left, right) = if side == crate::frame::Side::Left { (gap, 0) } else { (0, gap) };
+    card.frame(ctx, Tokens::get().panel, side).inner_margin(10).outer_margin(egui::Margin { left, right, top: 0, bottom: gap })
 }
 
 /// The Prepare or Preview panel at the window's right edge; the rectangle it takes.
@@ -637,7 +638,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
         .edge("sc_print_settings", Edge::Right)
         .exact_size(300.0)
         .resizable(false)
-        .frame(panel_frame(ui.ctx()))
+        .frame(panel_frame(ui.ctx(), crate::frame::Side::Right))
         .show(ui, |ui| {
             crate::ui_kit::scope(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {

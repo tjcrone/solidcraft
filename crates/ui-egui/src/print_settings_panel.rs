@@ -1,11 +1,10 @@
-//! The Print Settings window: a modeless card, like Parameters, with the slicer's settings in
-//! the sections OrcaSlicer users know (Printer, Filament, Process with its Quality, Strength,
-//! Speed, Support and Others pages), a Files page for the profile files the values come from,
-//! and an Advanced page for any key the catalogue leaves out. Every field shows the value that
-//! applies (the design's own override, else the files', else the slicer's default) and changes
-//! it at once through `print.settings.set`, which is undoable and saved in the design. The
-//! window opens from the Slice ribbon, from the Browser's Document Settings and from the Slice
-//! panel; programmatic callers use the commands and never see it.
+//! The Print workspace's settings card, down the window's left side on Prepare and Preview: the
+//! profile files the values come from, then the slicer's settings in the sections OrcaSlicer
+//! users know (Printer, Filament, and Process as Quality, Strength, Speed, Support and Others),
+//! each folded until opened, and an Advanced section for any key the catalogue leaves out. A
+//! search above them shows the matching fields of every section. Every field shows the value
+//! that applies (the design's own override, else the files', else the slicer's default) and
+//! changes it at once through `print.settings.set`, which is undoable and saved in the design.
 
 use std::collections::BTreeMap;
 
@@ -36,9 +35,9 @@ pub struct Field {
     pub kind: Kind,
 }
 
-/// One page of the catalogue.
+/// One section of the catalogue.
 pub struct Section {
-    /// Message id of the page's name.
+    /// Message id of the section's name.
     pub label: &'static str,
     pub fields: &'static [Field],
 }
@@ -314,79 +313,24 @@ pub fn fields() -> impl Iterator<Item = &'static Field> {
     SECTIONS.iter().flat_map(|s| s.fields.iter())
 }
 
-/// The window's pages: the profile files, the catalogue's sections, then the free-form page.
-/// `SECTIONS[i]` is page `i + 1`.
-pub const PAGE_FILES: usize = 0;
-pub const PAGE_ADVANCED: usize = SECTIONS.len() + 1;
+/// The card's width: room for a label, the widest control (a choice) and its reset button.
+const WIDTH: f32 = 340.0;
 
-// A page for the files, one per catalogue section, and the free-form page, in that order.
-const _: () = assert!(PAGES.len() == SECTIONS.len() + 2);
+/// The label column of the card's rows: what the width leaves beside a choice and its reset button.
+const LABEL_WIDTH: f32 = 136.0;
 
-const PAGES: &[ui_kit::WindowPage<SolveApp>] = &[
-    ui_kit::WindowPage {
-        icon: ui_kit::Icon::Kit("settings"),
-        label: "print.page_files",
-        group: Some("print.section_profiles"),
-        handle: "print:page:Files",
-        scroll: true,
-        draw: &page::<0>,
-    },
-    ui_kit::WindowPage {
-        icon: ui_kit::Icon::Kit("ws_print"),
-        label: "print.page_printer",
-        group: Some("print.section_printer"),
-        handle: "print:page:Printer",
-        scroll: true,
-        draw: &page::<1>,
-    },
-    ui_kit::WindowPage {
-        icon: ui_kit::Icon::Kit("settings"),
-        label: "print.page_filament",
-        group: Some("print.section_filament"),
-        handle: "print:page:Filament",
-        scroll: true,
-        draw: &page::<2>,
-    },
-    ui_kit::WindowPage {
-        icon: ui_kit::Icon::Kit("settings"),
-        label: "print.page_quality",
-        group: Some("print.section_process"),
-        handle: "print:page:Quality",
-        scroll: true,
-        draw: &page::<3>,
-    },
-    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_strength", group: None, handle: "print:page:Strength", scroll: true, draw: &page::<4> },
-    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_speed", group: None, handle: "print:page:Speed", scroll: true, draw: &page::<5> },
-    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_support", group: None, handle: "print:page:Support", scroll: true, draw: &page::<6> },
-    ui_kit::WindowPage { icon: ui_kit::Icon::Kit("settings"), label: "print.page_others", group: None, handle: "print:page:Others", scroll: true, draw: &page::<7> },
-    ui_kit::WindowPage {
-        icon: ui_kit::Icon::Kit("settings"),
-        label: "print.page_advanced",
-        group: Some("print.section_advanced"),
-        handle: "print:page:Advanced",
-        scroll: true,
-        draw: &page::<8>,
-    },
-];
-
-/// The window and what it keeps between frames.
+/// The card and what it keeps between frames.
 #[derive(Default)]
-pub struct PrintSettingsWindow {
-    pub open: bool,
-    /// The page shown, an index into the pages.
-    pub section: usize,
-    /// The search text; while it is not empty every page shows the matching fields instead.
+pub struct PrintSettingsPanel {
+    /// The search text; while it is not empty the card shows the matching fields instead.
     pub filter: String,
     cache: Cache,
-    /// The design's overrides and the settings files as they were when the window opened: Cancel
-    /// puts them back. Changes apply as they are made, so the preview follows them.
-    before: Option<(BTreeMap<String, Value>, Vec<String>)>,
-    /// The Advanced page's key and value being typed.
+    /// The Advanced section's key and value being typed.
     custom_key: String,
     custom_value: String,
 }
 
-/// The values the window last read, and the drafts its fields edit.
+/// The values the card last read, and the drafts its fields edit.
 #[derive(Default)]
 struct Cache {
     /// The settings files and the session revision the values were read for.
@@ -397,117 +341,65 @@ struct Cache {
     ints: BTreeMap<&'static str, i64>,
 }
 
-pub fn open(app: &mut SolveApp) {
+/// The settings card at the window's left edge; the rectangle it takes.
+pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
+    use ui_kit::{Container, Edge, Surface};
     crate::print_workspace::load_settings(app);
-    if !app.print_settings_window.open {
-        app.print_settings_window.before = Some((app.session.doc.print.overlay.clone(), app.print_workspace.settings.config_files.clone()));
-    }
-    app.print_settings_window.open = true;
-    app.home.open = false;
+    Container::new(ui.ctx(), Surface::Panel)
+        .edge("sc_print_settings_card", Edge::Left)
+        .exact_size(WIDTH)
+        .resizable(false)
+        .frame(crate::print_workspace::panel_frame(ui.ctx(), crate::frame::Side::Left))
+        .show(ui, |ui| {
+            ui_kit::scope(ui, |ui| {
+                ui.heading(app.tr("print.settings_title"));
+                search_row(app, ui);
+                ui.add_space(Tokens::get().space_4);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    if app.print_settings_panel.filter.trim().is_empty() {
+                        sections(app, ui);
+                    } else {
+                        search_results(app, ui);
+                    }
+                });
+            });
+        })
+        .response
+        .rect
 }
 
-/// Draw the window when it is open. Called once per frame.
-pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
-    if !app.print_settings_window.open {
-        return;
+/// Every section, folded until opened; the profile files start open.
+fn sections(app: &mut SolveApp, ui: &mut egui::Ui) {
+    refresh(app);
+    let refused = refused(app);
+    let files = app.tr("print.page_files").to_string();
+    ui_kit::section(ui, "print_settings:files", &files, true, |ui| files_section(app, ui));
+    for section in SECTIONS {
+        let title = app.tr(section.label).to_string();
+        ui_kit::section(ui, ("print_settings", section.label), &title, false, |ui| {
+            form(ui, |ui| {
+                for field in section.fields {
+                    field_row(app, ui, field, &refused);
+                }
+            });
+        });
     }
-    crate::print_workspace::load_settings(app);
-    let title = app.tr("print.settings_title").to_string();
-    let ok = app.tr("ui.heading_ok").to_string();
-    let cancel = app.tr("ui.cancel").to_string();
-    let window = ui_kit::Window::new(egui::Id::unique("sc_print_settings"), "settings", &title)
-        .cards(3.0)
-        .page_rows(24.0)
-        .page_padding(egui::Margin {
-            left: (Tokens::get().space_16 + Tokens::get().space_4) as i8,
-            right: (Tokens::get().space_16 + Tokens::get().space_4) as i8,
-            top: Tokens::get().space_16 as i8,
-            bottom: Tokens::get().space_16 as i8,
-        })
-        .fields()
-        .actions(&ok, &cancel, None);
-    let mut selected = app.print_settings_window.section;
-    let mut reset_all = false;
+    let advanced = app.tr("print.page_advanced").to_string();
+    ui_kit::section(ui, "print_settings:advanced", &advanced, false, |ui| advanced_section(app, ui));
+    ui.separator();
     let overridden = app.session.doc.print.overlay.len();
-    let hooks = solidcraft_ui_kit::panel::PageListHooks { header: &search_header, on_select: &|app: &mut SolveApp, _| clear_search(app), sidebar_footer: None };
-    let (closed, action) = window.show_pages_with_header(ctx, &mut selected, PAGES, app, &hooks, |ui| {
-        let label = solidcraft_ui_text::tr("print.reset_all_settings");
-        if ui_kit::button(ui, label, ui_kit::Button::Enabled(overridden > 0)).on_hover_text(solidcraft_ui_text::tr("print.reset_all_hint")).clicked() {
-            reset_all = true;
-        }
-    });
-    app.print_settings_window.section = selected;
-    if reset_all && let Err(e) = app.run("print.settings.clear", json!({})) {
+    let label = app.tr("print.reset_all_settings").to_string();
+    if ui_kit::button(ui, &label, ui_kit::Button::Enabled(overridden > 0)).on_hover_text(app.tr("print.reset_all_hint")).clicked()
+        && let Err(e) = app.run("print.settings.clear", json!({}))
+    {
         app.set_status(e, true);
     }
-    if action == ui_kit::Action::Ok {
-        close(app, true);
-    } else if closed || action == ui_kit::Action::Cancel {
-        close(app, false);
-    }
-}
-
-/// Close the window: OK keeps every change made in it (`keep`); Cancel and the close button put
-/// the design's overrides and the settings files back as they were when it opened.
-pub(crate) fn close(app: &mut SolveApp, keep: bool) {
-    app.print_settings_window.open = false;
-    if let Some(before) = app.print_settings_window.before.take()
-        && !keep
-    {
-        restore(app, before);
-    }
-}
-
-/// Cancel: the design's overrides and the settings files back to what they were when the window
-/// opened, where they changed.
-fn restore(app: &mut SolveApp, (overlay, files): (BTreeMap<String, Value>, Vec<String>)) {
-    if app.session.doc.print.overlay != overlay {
-        let result = app.run("print.settings.clear", json!({})).and_then(|_| {
-            if overlay.is_empty() { Ok(Value::Null) } else { app.run("print.settings.set", json!({ "set": overlay })) }
-        });
-        if let Err(e) = result {
-            app.set_status(e, true);
-        }
-    }
-    if app.print_workspace.settings.config_files != files {
-        app.print_workspace.settings.config_files = files;
-        crate::print_workspace::save_settings(app);
-    }
-}
-
-fn page<const INDEX: usize>(ui: &mut egui::Ui, app: &mut SolveApp) {
-    if app.print_settings_window.section != INDEX {
-        app.print_settings_window.section = INDEX;
-    }
-    if !app.print_settings_window.filter.trim().is_empty() {
-        search_results(app, ui);
-        return;
-    }
-    match INDEX {
-        PAGE_FILES => files_page(app, ui),
-        PAGE_ADVANCED => advanced_page(app, ui),
-        n => {
-            if let Some(section) = SECTIONS.get(n - 1) {
-                section_page(app, ui, section);
-            }
-        }
-    }
-}
-
-/// The search field, above every page (the window's header strip).
-fn search_header(ui: &mut egui::Ui, app: &mut SolveApp) {
-    search_row(app, ui);
-}
-
-/// A page picked from the list shows that page, not the last search's results.
-fn clear_search(app: &mut SolveApp) {
-    app.print_settings_window.filter.clear();
 }
 
 fn search_row(app: &mut SolveApp, ui: &mut egui::Ui) {
     let id = ui.make_persistent_id("print_settings_search");
     let hint = app.tr("print.search").to_string();
-    ui_kit::search_field(ui, id, &mut app.print_settings_window.filter, &hint);
+    ui_kit::search_field(ui, id, &mut app.print_settings_panel.filter, &hint);
 }
 
 /// A field matches when its key or its label holds every word of the search.
@@ -521,7 +413,7 @@ fn matches(filter: &str, field: &Field) -> bool {
 
 fn search_results(app: &mut SolveApp, ui: &mut egui::Ui) {
     refresh(app);
-    let filter = app.print_settings_window.filter.trim().to_string();
+    let filter = app.print_settings_panel.filter.trim().to_string();
     let refused = refused(app);
     let mut any = false;
     for section in SECTIONS {
@@ -544,23 +436,8 @@ fn search_results(app: &mut SolveApp, ui: &mut egui::Ui) {
     }
 }
 
-fn section_page(app: &mut SolveApp, ui: &mut egui::Ui, section: &Section) {
-    refresh(app);
-    let refused = refused(app);
-    let title = app.tr(section.label).to_string();
-    let note = app.tr("print.settings_note").to_string();
-    ui_kit::settings_heading(ui, &title, &note);
-    ui.add_space(Tokens::get().space_8);
-    form(ui, |ui| {
-        for field in section.fields {
-            field_row(app, ui, field, &refused);
-        }
-    });
-}
-
 fn form(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
-    let t = Tokens::get();
-    ui_kit::settings_form(ui, t.form_label_width * 2.2, add);
+    ui_kit::settings_form(ui, LABEL_WIDTH, add);
 }
 
 /// What the slicer refused on the last slice, by key.
@@ -610,7 +487,7 @@ fn write_back(current: Option<&Value>, text: String) -> Value {
 fn refresh(app: &mut SolveApp) {
     let files = app.print_workspace.settings.config_files.clone();
     let key = (files.clone(), app.session.revision);
-    if app.print_settings_window.cache.key.as_ref() == Some(&key) {
+    if app.print_settings_panel.cache.key.as_ref() == Some(&key) {
         return;
     }
     let keys: Vec<&str> = fields().map(|f| f.key).collect();
@@ -625,7 +502,7 @@ fn refresh(app: &mut SolveApp) {
             );
         }
     }
-    let cache = &mut app.print_settings_window.cache;
+    let cache = &mut app.print_settings_panel.cache;
     cache.key = Some(key);
     cache.numbers.clear();
     cache.ints.clear();
@@ -670,7 +547,7 @@ fn source_text(app: &SolveApp, source: &str, file: &str) -> String {
 fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refused: &BTreeMap<String, String>) {
     let t = Tokens::get();
     let (current, source, file) =
-        app.print_settings_window.cache.values.get(field.key).cloned().unwrap_or((Value::Null, "default".into(), String::new()));
+        app.print_settings_panel.cache.values.get(field.key).cloned().unwrap_or((Value::Null, "default".into(), String::new()));
     let overridden = source == "design";
     // The row keeps its shape while a value is typed (the reset button is always there, enabled
     // only for an override): a row that changed under the field would take its focus.
@@ -679,28 +556,28 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
     ui_kit::row(ui, &label, |ui| {
         let response = match field.kind {
             Kind::Number { min, max, step, decimals, unit } => {
-                let mut draft = app.print_settings_window.cache.numbers.get(field.key).copied().unwrap_or(min);
+                let mut draft = app.print_settings_panel.cache.numbers.get(field.key).copied().unwrap_or(min);
                 let response = ui_kit::number_field_on_commit(ui, &mut draft, min..=max, step, unit);
                 if response.changed() {
-                    app.print_settings_window.cache.numbers.insert(field.key, draft);
+                    app.print_settings_panel.cache.numbers.insert(field.key, draft);
                     set(app, field.key, write_back(Some(&current), format!("{draft:.decimals$}")));
                 }
                 response
             }
             Kind::Percent => {
-                let mut draft = app.print_settings_window.cache.numbers.get(field.key).copied().unwrap_or(0.0);
+                let mut draft = app.print_settings_panel.cache.numbers.get(field.key).copied().unwrap_or(0.0);
                 let response = ui_kit::number_field_on_commit(ui, &mut draft, 0.0..=1000.0, 1.0, "%");
                 if response.changed() {
-                    app.print_settings_window.cache.numbers.insert(field.key, draft);
+                    app.print_settings_panel.cache.numbers.insert(field.key, draft);
                     set(app, field.key, write_back(Some(&current), format!("{draft:.0}%")));
                 }
                 response
             }
             Kind::Int { min, max, unit } => {
-                let mut draft = app.print_settings_window.cache.ints.get(field.key).copied().unwrap_or(min);
+                let mut draft = app.print_settings_panel.cache.ints.get(field.key).copied().unwrap_or(min);
                 let response = ui_kit::number_field_on_commit(ui, &mut draft, min..=max, 1.0, unit);
                 if response.changed() {
-                    app.print_settings_window.cache.ints.insert(field.key, draft);
+                    app.print_settings_panel.cache.ints.insert(field.key, draft);
                     set(app, field.key, write_back(Some(&current), draft.to_string()));
                 }
                 response
@@ -718,14 +595,21 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
                 let value = as_text(&current);
                 let shown = options.iter().find(|(v, _)| *v == value).map_or(value.clone(), |(_, l)| app.tr(l).to_string());
                 let mut picked: Option<&'static str> = None;
-                let response = ui_kit::dropdown_menu(ui, ("print_setting", field.key), &shown, |ui| {
-                    for (option, label) in options {
-                        if ui_kit::list_picker(ui, option, solidcraft_ui_text::tr(label), *option == value).clicked() {
-                            picked = Some(option);
-                            ui.close();
-                        }
-                    }
-                });
+                // A choice takes the width it is given: leave the reset button its room in the card.
+                let width = (ui.available_width() - ui.spacing().interact_size.y - 2.0 * ui.spacing().item_spacing.x).max(t.control_height);
+                let response = ui
+                    .scope(|ui| {
+                        ui.set_max_width(width);
+                        ui_kit::dropdown_menu(ui, ("print_setting", field.key), &shown, |ui| {
+                            for (option, label) in options {
+                                if ui_kit::list_picker(ui, option, solidcraft_ui_text::tr(label), *option == value).clicked() {
+                                    picked = Some(option);
+                                    ui.close();
+                                }
+                            }
+                        })
+                    })
+                    .inner;
                 if let Some(option) = picked
                     && option != value
                 {
@@ -747,11 +631,8 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
 
 /// The profile files the values come from: OrcaSlicer-style JSON, one each for the printer,
 /// the filament and the process.
-fn files_page(app: &mut SolveApp, ui: &mut egui::Ui) {
-    let title = app.tr("print.page_files").to_string();
-    let note = app.tr("print.config_help").to_string();
-    ui_kit::settings_heading(ui, &title, &note);
-    ui.add_space(Tokens::get().space_8);
+fn files_section(app: &mut SolveApp, ui: &mut egui::Ui) {
+    ui_kit::text(ui, app.tr("print.config_help"), ui_kit::Text::Hint("print_files_help"));
     let mut remove = None;
     for (i, file) in app.print_workspace.settings.config_files.clone().iter().enumerate() {
         ui.horizontal(|ui| {
@@ -784,12 +665,9 @@ fn files_page(app: &mut SolveApp, ui: &mut egui::Ui) {
 }
 
 /// Every override the design holds, each with its way back, and a row to set any key.
-fn advanced_page(app: &mut SolveApp, ui: &mut egui::Ui) {
+fn advanced_section(app: &mut SolveApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let title = app.tr("print.page_advanced").to_string();
-    let note = app.tr("print.advanced_hint").to_string();
-    ui_kit::settings_heading(ui, &title, &note);
-    ui.add_space(t.space_8);
+    ui_kit::text(ui, app.tr("print.advanced_hint"), ui_kit::Text::Hint("print_advanced_help"));
     let overlay = app.session.doc.print.overlay.clone();
     if overlay.is_empty() {
         ui_kit::text(ui, app.tr("print.no_overrides"), ui_kit::Text::Hint("print_overrides"));
@@ -815,24 +693,24 @@ fn advanced_page(app: &mut SolveApp, ui: &mut egui::Ui) {
         ui_kit::row(ui, &key_label, |ui| {
             let id = ui.make_persistent_id("print_custom_key");
             let hint = app.tr("print.key_example").to_string();
-            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_window.custom_key, &hint, false, 64);
+            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_panel.custom_key, &hint, false, 64);
         });
         ui_kit::row(ui, &value_label, |ui| {
             let id = ui.make_persistent_id("print_custom_value");
             let hint = app.tr("print.value_example").to_string();
-            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_window.custom_value, &hint, false, 256);
+            ui_kit::bounded_cell_editor(ui, id, &mut app.print_settings_panel.custom_value, &hint, false, 256);
         });
     });
-    let key = app.print_settings_window.custom_key.trim().to_string();
-    let value = app.print_settings_window.custom_value.trim().to_string();
+    let key = app.print_settings_panel.custom_key.trim().to_string();
+    let value = app.print_settings_panel.custom_value.trim().to_string();
     let known = solidcraft_engine::print::engine_reads(&key);
     if !key.is_empty() && !known {
         ui.colored_label(t.warning, app.tr("print.advanced_unknown"));
     }
     if ui_kit::button(ui, app.tr("print.advanced_set"), ui_kit::Button::Enabled(!key.is_empty() && !value.is_empty())).clicked() {
         set(app, &key, Value::String(value));
-        app.print_settings_window.custom_key.clear();
-        app.print_settings_window.custom_value.clear();
+        app.print_settings_panel.custom_key.clear();
+        app.print_settings_panel.custom_value.clear();
     }
 }
 
@@ -855,7 +733,7 @@ mod tests {
     fn every_label_and_option_is_translated() {
         let mut ids: Vec<&str> = fields().map(|f| f.label).collect();
         ids.extend(SECTIONS.iter().map(|s| s.label));
-        ids.extend(PAGES.iter().flat_map(|p| [Some(p.label), p.group].into_iter().flatten()));
+        ids.extend(["print.settings_title", "print.page_files", "print.page_advanced"]);
         for field in fields() {
             if let Kind::Choice(options) = field.kind {
                 ids.extend(options.iter().map(|(_, l)| *l));
