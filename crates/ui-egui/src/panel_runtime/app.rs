@@ -1480,6 +1480,7 @@ impl crate::SolveApp {
         let print_settings =
             (crate::print_workspace::active(self) && !crate::printer_dashboard::active(self)).then(|| crate::print_settings_panel::panel(self, ui));
         crate::shell::register_panel(self, "print:settings", print_settings);
+        self.print_workspace.settings_rect = print_settings;
         crate::ui_kit::Container::new(ui.ctx(), crate::ui_kit::Surface::Viewport)
             .central()
             .frame(crate::ui_kit::Container::new(ui.ctx(), crate::ui_kit::Surface::Viewport).edge_frame(egui::Color32::TRANSPARENT))

@@ -73,9 +73,11 @@ pub struct State {
     /// show the part in the same place at that moment; it stays until the workspace is left,
     /// so moving the part never moves the camera.
     anchor: Option<[f32; 3]>,
-    /// Where the workspace's panel stood at the last frame. The host draws the scene before the
-    /// panel, so the canvas's own controls keep clear of it by this.
+    /// Where the workspace's panel and its settings card stood at the last frame. The host draws
+    /// the scene before them, so the camera's input and the canvas's own controls keep clear of
+    /// them by these (`show`).
     pub(crate) panel_rect: Option<egui::Rect>,
+    pub(crate) settings_rect: Option<egui::Rect>,
     /// The highest layer shown, as an index; `None` shows every layer.
     pub top_layer: Option<usize>,
     pub show_travels: bool,
@@ -225,6 +227,7 @@ impl Default for State {
             view_offset: [0.0; 3],
             anchor: None,
             panel_rect: None,
+            settings_rect: None,
             top_layer: None,
             show_travels: false,
             printer_tried: None,
@@ -878,6 +881,10 @@ fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
 pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let rect = ui.max_rect();
     app.viewport.rect = Some(rect);
+    // The host forgets every panel at the start of a frame and draws ours after this scene: tell
+    // it where they stood at the last frame, so a wheel or a press over them is not the camera's.
+    crate::shell::register_panel(app, "print:panel", app.print_workspace.panel_rect);
+    crate::shell::register_panel(app, "print:settings", app.print_workspace.settings_rect);
     // Where the view navigator stood at the last frame, once the host had placed the panels.
     let navigator = app.viewport.layout.as_ref().map(|l| l.axis_view);
     crate::viewport::refresh_layout(app, ui.ctx());
@@ -1044,11 +1051,8 @@ fn layer_slider(app: &mut SolveApp, ui: &mut egui::Ui, rect: egui::Rect, navigat
     if n < 2 {
         return;
     }
-    // The part of the canvas no card and not the workspace's own panel covers. The panel is drawn
-    // after the scene, so the host does not know it yet at this point of the frame.
-    let mut covered = crate::shell::covered_rects(app);
-    covered.extend(app.print_workspace.panel_rect);
-    let free = crate::viewport_layout::free_rect(crate::shell::content_rect(app, rect), &covered);
+    // The part of the canvas no card covers, the workspace's own panels among them (`show`).
+    let free = crate::viewport_layout::free_rect(crate::shell::content_rect(app, rect), &crate::shell::covered_rects(app));
     let mut lane = egui::Rect::from_min_max(egui::pos2(free.right() - 44.0, free.top() + 36.0), egui::pos2(free.right() - 16.0, free.bottom() - 36.0));
     // The view navigator stands in the same corner: the slider and its readout start below it.
     if let Some(navigator) = navigator.filter(|r| r.is_positive() && r.right() > lane.left() - 80.0 && r.left() < lane.right()) {
