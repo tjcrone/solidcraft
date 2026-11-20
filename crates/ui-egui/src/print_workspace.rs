@@ -410,6 +410,15 @@ fn prepare_offset(app: &SolveApp) -> Option<[f32; 3]> {
     Some([f32::midpoint(bed[0], bed[2]) + p.x as f32 - c.x as f32, f32::midpoint(bed[1], bed[3]) + p.y as f32 - c.y as f32, -(b.min.z as f32)])
 }
 
+/// The point Orbit around: Origin turns the view about: the middle of the bed's surface while
+/// Print shows a bed (printer coordinates have their zero at a corner of it), else the world origin.
+pub fn orbit_origin(app: &SolveApp) -> Vec3 {
+    match &app.print_workspace.bed {
+        Some(b) if active(app) => Vec3::new(f64::from(f32::midpoint(b.rect[0], b.rect[2])), f64::from(f32::midpoint(b.rect[1], b.rect[3])), 0.0),
+        _ => Vec3::ZERO,
+    }
+}
+
 /// Read the bed from the settings when the files or the design changed.
 fn bed_info(app: &mut SolveApp) {
     let key = (app.print_workspace.settings.config_files.clone(), app.session.revision);

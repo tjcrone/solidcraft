@@ -356,7 +356,7 @@ pub(crate) fn twist_turn(app: &mut SolveApp, rect: Rect, radians: f64, hover: Op
     }
     let pivot = match app.preferences.orbit_around {
         OrbitAround::ViewCentre => None,
-        OrbitAround::Origin => Some(Vec3::ZERO),
+        OrbitAround::Origin => Some(crate::print_workspace::orbit_origin(app)),
         OrbitAround::Cursor => Some(match app.viewport.twist_pivot {
             Some(p) => p,
             None => {
@@ -1527,7 +1527,7 @@ pub(crate) fn orbit_drag(app: &mut SolveApp, rect: Rect, dx: f64, dy: f64, press
     // otherwise it orbits about the camera target, see `axis_view`.
     let pivot = if around_cursor {
         match app.preferences.orbit_around {
-            crate::prefs::OrbitAround::Origin => Some(Vec3::ZERO),
+            crate::prefs::OrbitAround::Origin => Some(crate::print_workspace::orbit_origin(app)),
             _ => app.viewport.orbit_pivot,
         }
     } else {
@@ -1646,7 +1646,7 @@ fn orbit_pivot(app: &SolveApp, rect: Rect, kept: KeptPivot, at: Pos2) -> (Option
             let (p, chosen_at) = kept_view_middle(app, rect, kept.1.map(|s| (kept.0, s)));
             (p, (p, chosen_at))
         }
-        OrbitAround::Origin => (Some(Vec3::ZERO), kept),
+        OrbitAround::Origin => (Some(crate::print_workspace::orbit_origin(app)), kept),
         OrbitAround::Cursor => {
             let p = kept.0.unwrap_or_else(|| pivot_under(app, &projection(app, rect), at));
             (Some(p), (Some(p), None))
