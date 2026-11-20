@@ -140,7 +140,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
         .edge("sc_printer_dashboard", Edge::Right)
         .exact_size(300.0)
         .resizable(false)
-        .frame(Container::new(ui.ctx(), Surface::Panel).edge_frame(Tokens::get().panel).inner_margin(10))
+        .frame(crate::print_workspace::panel_frame(ui.ctx()))
         .show(ui, |ui| {
             crate::ui_kit::scope(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
