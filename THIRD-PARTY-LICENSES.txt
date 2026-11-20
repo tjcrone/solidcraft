@@ -584,7 +584,7 @@ strum_macros 0.27.2  (MIT)
 subtle 2.6.1  (BSD-3-Clause)
 svgtypes 0.16.2  (Apache-2.0 OR MIT)
 sx-boostvoronoi 0.12.1  (BSL-1.0)
-sx-core 0.2.7  (Apache-2.0)
+sx-core 0.2.10  (Apache-2.0)
 sx-cpp-map 0.2.0  (MIT OR Apache-2.0)
 sx-i-overlay 9.0.0  (MIT OR Apache-2.0)
 syn 2.0.119  (MIT OR Apache-2.0)
@@ -17987,7 +17987,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-sx-core 0.2.7
+sx-core 0.2.10
 ================================================================================
 
 Apache License
@@ -18193,7 +18193,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ================================================================================
-sx-core 0.2.7
+sx-core 0.2.10
 ================================================================================
 
 SlicerX
