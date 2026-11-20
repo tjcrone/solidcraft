@@ -2087,7 +2087,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         }
         "ui.historyShowHidden" => app.tree.history_show_hidden = p["show"].as_bool().unwrap_or(false),
         "ui.workspace" | "ui.workspace.design" | "ui.workspace.render" | "ui.workspace.drawing" | "ui.workspace.print" => {
-            let result = p.get("workspace").and_then(Value::as_str).map_or(Ok(()), |workspace| crate::print_workspace::switch(app, workspace));
+            let result = p.get("workspace").and_then(Value::as_str).map_or(Ok(()), |workspace| crate::workspace::enter(app, workspace));
             if let Err(error) = result {
                 app.set_status(error, true);
             }
