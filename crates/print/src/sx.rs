@@ -58,10 +58,11 @@ impl Slicer for SxSlicer {
         // there to where the placement asks.
         let mut plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
         for object in &mut plate.objects {
-            object.transform[12] += job.placement.x;
-            object.transform[13] += job.placement.y;
+            object.transform[12] += f64::from(job.placement.x);
+            object.transform[13] += f64::from(job.placement.y);
         }
-        let offset = plate.objects.first().map_or([0.0; 3], |o| [o.transform[12], o.transform[13], o.transform[14]]);
+        // The engine places in f64 since 0.2.8; the preview's offset stays f32, as its points are.
+        let offset = plate.objects.first().map_or([0.0; 3], |o| [o.transform[12] as f32, o.transform[13] as f32, o.transform[14] as f32]);
         let out = api::slice(&plate, &config, &SliceOptions::default()).map_err(|e| match e {
             api::Error::Blocked(why) | api::Error::Clearance(why) => Error::Unsafe(why),
             other => Error::Slice(other.to_string()),
