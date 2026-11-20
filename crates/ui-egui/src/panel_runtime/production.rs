@@ -183,10 +183,11 @@ impl Product {
     }
     fn available(self, app: &crate::SolveApp) -> bool {
         let render = crate::render_workspace::active(app);
+        let print = crate::print_workspace::active(app);
         match self {
-            Self::Browser => !render && !crate::render_ui::focused(app),
-            Self::History => !render && !crate::drawing_workspace::active(app) && !app.preferences.history_in_browser && !timeline_2d(app),
-            Self::Timeline2d => !render && !crate::drawing_workspace::active(app) && !app.preferences.history_in_browser && timeline_2d(app),
+            Self::Browser => !render && !print && !crate::render_ui::focused(app),
+            Self::History => !render && !print && !crate::drawing_workspace::active(app) && !app.preferences.history_in_browser && !timeline_2d(app),
+            Self::Timeline2d => !render && !print && !crate::drawing_workspace::active(app) && !app.preferences.history_in_browser && timeline_2d(app),
             Self::Assistant => crate::agent_chat::shown(app) && !app.preferences.agent_chat_popped,
             Self::RenderBrowser | Self::RenderLibrary | Self::RenderInspector | Self::RenderShots => render && !crate::render_ui::focused(app),
             Self::SketchOptions => !render && (crate::sketch_palette::editing(app) || crate::sketch_palette::image_tool(app)),
