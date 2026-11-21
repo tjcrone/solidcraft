@@ -82,6 +82,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     ui.painter().rect_filled(rect, 0.0, t.viewport_bottom);
     ui.interact(rect, ui.scope_id().with("printer_dashboard"), Sense::hover());
+    crate::print_workspace::sync_tool(app);
     sync_camera(app);
     let message = match camera_frame(app, ui.ctx()) {
         Ok(true) => None,
@@ -133,32 +134,22 @@ fn camera_frame(app: &mut SolveApp, ctx: &egui::Context) -> Result<bool, String>
     Ok(true)
 }
 
-/// The panel: the printer's state and temperatures, and the controls; the rectangle it takes.
-pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
-    use crate::ui_kit::{Container, Edge, Surface};
-    Container::new(ui.ctx(), Surface::Panel)
-        .edge("sc_printer_dashboard", Edge::Right)
-        .exact_size(300.0)
-        .resizable(false)
-        .frame(crate::print_workspace::panel_frame(ui.ctx(), crate::frame::Side::Right))
-        .show(ui, |ui| {
-            crate::ui_kit::scope(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.heading(app.tr("print.printer_title"));
-                    rows(app, ui);
-                    ui.separator();
-                    if crate::ui_kit::button(ui, app.tr("printer.back_to_print"), crate::ui_kit::Button::Normal).clicked() {
-                        app.ui.tab = crate::print_workspace::PREVIEW.into();
-                    }
-                });
-            });
-        })
-        .response
-        .rect
+/// The Printer panel's body in the shared host: the printer's state and temperatures, and the
+/// controls.
+pub(crate) fn shared_body(app: &mut SolveApp, ui: &mut egui::Ui) {
+    crate::ui_kit::scope(ui, |ui| {
+        let top = ui.cursor().top();
+        let body = egui::ScrollArea::vertical()
+            .id_salt("printer_dashboard")
+            .min_scrolled_height(0.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| rows(app, ui));
+        crate::panel_runtime::report_content_extent(ui, top, body.content_size.y, false);
+    });
 }
 
 fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
+    use crate::ui_kit::{StatusTone, Text, status_line, text};
     crate::print_workspace::address_rows(app, ui);
     if crate::ui_kit::button(ui, app.tr("printer.refresh"), crate::ui_kit::Button::Small).on_hover_text(app.tr("printer.refresh_hint")).clicked()
         && let Err(e) = app.run("print.refresh", json!({}))
@@ -182,12 +173,12 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
         ui.label(crate::print_workspace::state_label(app, &state));
         let name = status["filename"].as_str().unwrap_or("");
         if !name.is_empty() && matches!(state.as_str(), "printing" | "paused") {
-            ui.small(name);
+            text(ui, name, Text::Note("printer_file"));
             let progress = status["progress"].as_f64().unwrap_or(0.0);
             crate::ui_kit::progress(ui, "printer", progress.clamp(0.0, 1.0) as f32);
             let elapsed = status["print_duration_s"].as_f64().unwrap_or(0.0);
             let remaining = if progress > 0.01 { Some(elapsed / progress - elapsed) } else { None };
-            ui.small(match remaining {
+            let done = match remaining {
                 Some(r) => format!(
                     "{:.0} % · {} · {}",
                     progress * 100.0,
@@ -195,20 +186,20 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
                     solidcraft_ui_text::format("printer.remaining", &[("time", &crate::print_workspace::hms(r))])
                 ),
                 None => format!("{:.0} % · {}", progress * 100.0, crate::print_workspace::hms(elapsed)),
-            });
+            };
+            text(ui, &done, Text::Note("printer_progress"));
         }
     } else {
-        let text = match status["age_s"].as_f64() {
+        let unreachable = match status["age_s"].as_f64() {
             Some(a) => solidcraft_ui_text::format("print.unreachable_since", &[("time", &crate::print_workspace::hms(a))]),
             None => app.tr("print.unreachable").to_string(),
         };
-        ui.colored_label(t.warning, text);
+        status_line(ui, &unreachable, StatusTone::Warning);
         if let Some(e) = status["error"].as_str() {
-            ui.add(egui::Label::new(egui::RichText::new(e).small()).wrap());
+            text(ui, e, Text::Note("printer_error"));
         }
     }
-    ui.separator();
-    ui.label(app.tr("printer.temperatures"));
+    crate::ui_kit::section_heading(ui, app.tr("printer.temperatures"));
     let nozzle = (status["extruder"]["temperature"].as_f64().unwrap_or(0.0), status["extruder"]["target"].as_f64().unwrap_or(0.0));
     let bed = (status["bed"]["temperature"].as_f64().unwrap_or(0.0), status["bed"]["target"].as_f64().unwrap_or(0.0));
     if !app.printer_dashboard.fields_seeded && reachable {
@@ -236,10 +227,7 @@ fn rows(app: &mut SolveApp, ui: &mut egui::Ui) {
 /// One heater: the reading, the target, a field to type a new target and a button to send it.
 fn heater_row(app: &mut SolveApp, ui: &mut egui::Ui, label: &str, (temperature, target): (f64, f64), nozzle: bool) {
     let most = if nozzle { 350.0 } else { 150.0 };
-    ui.horizontal(|ui| {
-        ui.label(app.tr(label));
-        ui.small(format!("{temperature:.0} / {target:.0} °C"));
-    });
+    crate::ui_kit::value_row(ui, app.tr(label), &format!("{temperature:.0} / {target:.0} °C"));
     ui.horizontal(|ui| {
         let value = if nozzle { &mut app.printer_dashboard.nozzle_target } else { &mut app.printer_dashboard.bed_target };
         crate::ui_kit::number_field(ui, value, 0.0..=most, 5.0, "°C");

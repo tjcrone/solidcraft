@@ -17,7 +17,6 @@ use solidcraft_engine::printer_host::PrinterHost;
 
 use crate::gpu::{Frame, GpuScene, PaletteIndex, SceneSlot};
 use solidcraft_viewport_egui::ViewportCallback;
-use crate::ui_kit::{Container, Edge, Surface};
 use crate::SolveApp;
 use solidcraft_theme::Tokens;
 
@@ -73,11 +72,8 @@ pub struct State {
     /// show the part in the same place at that moment; it stays until the workspace is left,
     /// so moving the part never moves the camera.
     anchor: Option<[f32; 3]>,
-    /// Where the workspace's panel and its settings card stood at the last frame. The host draws
-    /// the scene before them, so the camera's input and the canvas's own controls keep clear of
-    /// them by these (`show`).
-    pub(crate) panel_rect: Option<egui::Rect>,
-    pub(crate) settings_rect: Option<egui::Rect>,
+    /// The tool whose options the right-hand panel shows (`tool_body`).
+    pub(crate) tool: Option<Tool>,
     /// The highest layer shown, as an index; `None` shows every layer.
     pub top_layer: Option<usize>,
     pub show_travels: bool,
@@ -168,7 +164,6 @@ pub fn job_text(kind: JobKind, job_state: &str, printer_state: &str, waited: std
 /// no longer knows.
 pub fn job_line(app: &mut SolveApp, ui: &mut egui::Ui, printer_state: &str) {
     let Some(job) = app.print_workspace.job else { return };
-    let t = Tokens::get();
     let reply = match app.run("print.job", json!({ "job": job.id })) {
         Ok(j) => j,
         Err(_) => {
@@ -189,9 +184,9 @@ pub fn job_line(app: &mut SolveApp, ui: &mut egui::Ui, printer_state: &str) {
         app.tr(id).to_string()
     };
     if warning {
-        ui.colored_label(t.warning, text);
+        crate::ui_kit::status_line(ui, &text, crate::ui_kit::StatusTone::Warning);
     } else if !text.is_empty() {
-        ui.small(text);
+        crate::ui_kit::text(ui, &text, crate::ui_kit::Text::Note("print_job"));
     }
     if matches!(job_state.as_str(), "queued" | "running") {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
@@ -226,8 +221,7 @@ impl Default for State {
             settings_loaded: false,
             view_offset: [0.0; 3],
             anchor: None,
-            panel_rect: None,
-            settings_rect: None,
+            tool: None,
             top_layer: None,
             show_travels: false,
             printer_tried: None,
@@ -305,6 +299,7 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
     app.cancel_view_animation();
     // The anchor is taken on the first frame drawn, once the bed is known; leaving takes it off.
     app.print_workspace.anchor = None;
+    app.print_workspace.tool = None;
     if !on {
         sync_view(app);
     }
@@ -482,7 +477,8 @@ pub fn start(app: &mut SolveApp, id: &str) {
         // Print asks first, as the printer starts at once.
         "print.start" => app.print_workspace.confirm_print = true,
         "print.cancel" => cancel_print(app),
-        "print.place" => place(app, json!({"centre": true})),
+        // Place on Bed opens its options, as a Drawing tool does; they hold Centre on Bed.
+        "print.place" if app.ui.tab == PREPARE => app.print_workspace.tool = Some(Tool::Place),
         _ => {}
     }
 }
@@ -614,118 +610,124 @@ pub(crate) fn save_settings(app: &mut SolveApp) {
     }
 }
 
-/// Small text that wraps to the panel's width.
-fn wrapped_small(ui: &mut egui::Ui, text: &str) {
-    ui.add(egui::Label::new(egui::RichText::new(text).small()).wrap());
-}
-
 /// Seconds as `h:mm:ss`.
 pub fn hms(seconds: f64) -> String {
     let s = seconds.max(0.0).round() as u64;
     format!("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
 }
 
-/// The frame of Print's panels: the floating card the other workspaces' panels have, standing a
-/// gap in from the window's edge on its `side` and from the bottom.
-pub(crate) fn panel_frame(ctx: &egui::Context, side: crate::frame::Side) -> egui::Frame {
-    let card = Container::floating_card(Surface::Panel);
-    let gap = card.gap() as i8;
-    let (left, right) = if side == crate::frame::Side::Left { (gap, 0) } else { (0, gap) };
-    card.frame(ctx, Tokens::get().panel, side).inner_margin(10).outer_margin(egui::Margin { left, right, top: 0, bottom: gap })
+/// The default width of Print's right-hand panels in the shared host.
+pub(crate) const PANEL_WIDTH: f32 = 300.0;
+
+/// A Print tool whose options the right-hand panel shows while it is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tool {
+    /// Where the part stands on the bed.
+    Place,
 }
 
-/// The Prepare or Preview panel at the window's right edge; the rectangle it takes.
-pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
-    load_settings(app);
-    Container::new(ui.ctx(), Surface::Panel)
-        .edge("sc_print_settings", Edge::Right)
-        .exact_size(300.0)
-        .resizable(false)
-        .frame(panel_frame(ui.ctx(), crate::frame::Side::Right))
-        .show(ui, |ui| {
-            crate::ui_kit::scope(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if app.ui.tab == PREPARE {
-                        prepare_panel(app, ui);
-                    } else {
-                        slice_panel(app, ui);
-                    }
-                    ui.separator();
-                    if crate::ui_kit::button(ui, app.tr("print.return_design"), crate::ui_kit::Button::Normal).clicked()
-                        && let Err(e) = enter(app, false)
-                    {
-                        app.set_status(e, true);
-                    }
-                });
-            });
-        })
-        .response
-        .rect
-}
-
-/// Prepare: the profiles, where the part sits on the bed, and the Slice button.
-fn prepare_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
-    ui.heading(app.tr("print.prepare_title"));
-    let n = app.print_workspace.settings.config_files.len();
-    let files = if n == 0 { app.tr("print.config_none").to_string() } else { solidcraft_ui_text::format("print.config_count", &[("n", &n.to_string())]) };
-    ui.label(files);
-    let overrides = app.session.doc.print.overlay.len();
-    if overrides > 0 {
-        ui.small(solidcraft_ui_text::format("print.overrides_count", &[("n", &overrides.to_string())]));
+impl Tool {
+    fn command(self) -> &'static str {
+        match self {
+            Tool::Place => "print.place",
+        }
     }
-    ui.separator();
-    ui.heading(app.tr("print.placement_title"));
-    wrapped_small(ui, app.tr("print.placement_hint"));
+}
+
+/// A tool's options are open, and Prepare (where the tools work) is showing.
+pub(crate) fn tool_visible(app: &SolveApp) -> bool {
+    app.ui.tab == PREPARE && app.print_workspace.tool.is_some()
+}
+
+/// The open tool's name, for its panel's header.
+pub(crate) fn tool_title(app: &SolveApp) -> Option<String> {
+    let spec = solidcraft_engine::find_command(app.print_workspace.tool?.command())?;
+    Some(app.tr_label(spec.label).to_owned())
+}
+
+/// Put the open tool down, as Esc and its panel's close button do; whether one was open.
+pub(crate) fn close_tool(app: &mut SolveApp) -> bool {
+    app.print_workspace.tool.take().is_some()
+}
+
+/// A tool belongs to Prepare: it is put down when another tab shows.
+pub(crate) fn sync_tool(app: &mut SolveApp) {
+    if app.ui.tab != PREPARE {
+        app.print_workspace.tool = None;
+    }
+}
+
+/// The open tool's options, in the shared host's right-hand panel.
+pub(crate) fn tool_body(app: &mut SolveApp, ui: &mut egui::Ui) {
+    let Some(tool) = app.print_workspace.tool else { return };
+    crate::ui_kit::scope(ui, |ui| {
+        let top = ui.cursor().top();
+        let body = egui::ScrollArea::vertical().id_salt("print_tool").min_scrolled_height(0.0).auto_shrink([false, true]).show(ui, |ui| match tool {
+            Tool::Place => place_fields(app, ui),
+        });
+        crate::panel_runtime::report_content_extent(ui, top, body.content_size.y, false);
+    });
+}
+
+/// Place on Bed: where the part sits, and the way back to the middle.
+fn place_fields(app: &mut SolveApp, ui: &mut egui::Ui) {
+    crate::ui_kit::text(ui, app.tr("print.placement_hint"), crate::ui_kit::Text::Note("print_placement_hint"));
     let p = app.session.doc.print.placement;
     let (mut x, mut y, mut r) = (p.x, p.y, p.rotation);
-    let t = Tokens::get();
-    crate::ui_kit::settings_form(ui, t.form_label_width, |ui| {
-        let x_label = app.tr("print.place_x").to_string();
-        let y_label = app.tr("print.place_y").to_string();
-        let r_label = app.tr("print.place_rotation").to_string();
-        crate::ui_kit::row(ui, &x_label, |ui| {
-            if crate::ui_kit::number_field(ui, &mut x, -500.0..=500.0, 1.0, " mm").changed() {
-                place(app, json!({"x": x}));
-            }
-        });
-        crate::ui_kit::row(ui, &y_label, |ui| {
-            if crate::ui_kit::number_field(ui, &mut y, -500.0..=500.0, 1.0, " mm").changed() {
-                place(app, json!({"y": y}));
-            }
-        });
-        crate::ui_kit::row(ui, &r_label, |ui| {
-            if crate::ui_kit::number_field(ui, &mut r, -360.0..=360.0, 5.0, "°").changed() {
-                place(app, json!({"rotation": r}));
-            }
-        });
+    let x_label = app.tr("print.place_x").to_string();
+    let y_label = app.tr("print.place_y").to_string();
+    let r_label = app.tr("print.place_rotation").to_string();
+    crate::ui_kit::row(ui, &x_label, |ui| {
+        if crate::ui_kit::number_field(ui, &mut x, -500.0..=500.0, 1.0, " mm").changed() {
+            place(app, json!({"x": x}));
+        }
     });
-    ui.separator();
-    if crate::ui_kit::button(ui, app.tr("cmd.print.slice"), crate::ui_kit::Button::Primary).clicked() {
-        slice(app);
+    crate::ui_kit::row(ui, &y_label, |ui| {
+        if crate::ui_kit::number_field(ui, &mut y, -500.0..=500.0, 1.0, " mm").changed() {
+            place(app, json!({"y": y}));
+        }
+    });
+    crate::ui_kit::row(ui, &r_label, |ui| {
+        if crate::ui_kit::number_field(ui, &mut r, -360.0..=360.0, 5.0, "°").changed() {
+            place(app, json!({"rotation": r}));
+        }
+    });
+    if crate::ui_kit::button(ui, app.tr("print.place_centre"), crate::ui_kit::Button::Normal).clicked() {
+        place(app, json!({"centre": true}));
     }
 }
 
-/// Preview: the result, the toolpath legend, and the way to the printer.
-fn slice_panel(app: &mut SolveApp, ui: &mut egui::Ui) {
-    ui.heading(app.tr("print.slice_title"));
-    match app.session.print_slice().cloned() {
-        None => {
-            wrapped_small(ui, app.tr("print.slice_from_prepare"));
+/// Preview's panel in the shared host: the result, the toolpath legend and the printer, with the
+/// way to the printer pinned under them.
+pub(crate) fn preview_body(app: &mut SolveApp, ui: &mut egui::Ui) {
+    use crate::ui_kit::{Panel, section, text, Text};
+    let held = app.session.print_slice().cloned();
+    crate::ui_kit::scope(ui, |ui| {
+        let top = ui.cursor().top();
+        let available = ui.available_height();
+        if held.is_some() {
+            Panel::pinned_footer(ui, "print_preview_footer", 1, |ui| {
+                // Print asks first, as the ribbon's button does.
+                if crate::ui_kit::button(ui, app.tr("print.confirm_print_ok"), crate::ui_kit::Button::Primary).clicked() {
+                    app.print_workspace.confirm_print = true;
+                }
+            });
         }
-        Some(held) => {
-            ui.separator();
-            result_rows(app, ui, &held);
-            ui.separator();
-            toolpath_controls(app, ui, &held);
-            ui.separator();
-            printer_rows(app, ui);
-            ui.separator();
-            // Print asks first, as the ribbon's button does.
-            if crate::ui_kit::button(ui, app.tr("print.confirm_print_ok"), crate::ui_kit::Button::Primary).clicked() {
-                app.print_workspace.confirm_print = true;
-            }
-        }
-    }
+        let footer = (available - ui.available_height()).max(0.0);
+        let body = egui::ScrollArea::vertical().id_salt("print_preview").min_scrolled_height(0.0).auto_shrink([false, true]).show(ui, |ui| {
+            let Some(held) = &held else {
+                text(ui, app.tr("print.slice_from_prepare"), Text::Note("print_slice_from_prepare"));
+                return;
+            };
+            let estimate = app.tr("print.estimate").to_string();
+            section(ui, "print_preview:estimate", &estimate, true, |ui| result_rows(app, ui, held));
+            let toolpaths = app.tr("print.toolpaths_title").to_string();
+            section(ui, "print_preview:toolpaths", &toolpaths, true, |ui| toolpath_controls(app, ui, held));
+            let printer = app.tr("print.printer_title").to_string();
+            section(ui, "print_preview:printer", &printer, true, |ui| printer_rows(app, ui));
+        });
+        crate::panel_runtime::report_content_extent(ui, top, body.content_size.y + footer, false);
+    });
 }
 
 /// The "start printing?" question, open from Upload and print.
@@ -765,14 +767,13 @@ pub(crate) fn address_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     if app.print_workspace.settings.printer_url != before {
         save_settings(app);
     }
-    wrapped_small(ui, app.tr("print.printer_url_help"));
+    crate::ui_kit::text(ui, app.tr("print.printer_url_help"), crate::ui_kit::Text::Note("print_printer_url_help"));
     sync_printer(app);
 }
 
 /// The printer's state and the upload buttons, on the Slice panel.
 fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
-    ui.heading(app.tr("print.printer_title"));
+    use crate::ui_kit::{StatusTone, Text, status_line, text};
     sync_printer(app);
     let status = match app.run("print.status", json!({})) {
         Ok(v) => v,
@@ -790,23 +791,25 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
         ui.label(state_label(app, state));
         let name = status["filename"].as_str().unwrap_or("");
         if !name.is_empty() && matches!(state, "printing" | "paused") {
-            ui.small(name);
+            text(ui, name, Text::Note("print_printer_file"));
             let progress = status["progress"].as_f64().unwrap_or(0.0) as f32;
             crate::ui_kit::progress(ui, "print", progress.clamp(0.0, 1.0));
-            ui.small(format!("{:.0} % · {}", progress * 100.0, hms(status["print_duration_s"].as_f64().unwrap_or(0.0))));
+            let done = format!("{:.0} % · {}", progress * 100.0, hms(status["print_duration_s"].as_f64().unwrap_or(0.0)));
+            text(ui, &done, Text::Note("print_printer_progress"));
         }
         let heater =
             |v: &serde_json::Value| format!("{:.0} / {:.0} °C", v["temperature"].as_f64().unwrap_or(0.0), v["target"].as_f64().unwrap_or(0.0));
-        ui.small(format!("{} {} · {} {}", app.tr("print.extruder"), heater(&status["extruder"]), app.tr("print.bed"), heater(&status["bed"])));
+        let heaters = format!("{} {} · {} {}", app.tr("print.extruder"), heater(&status["extruder"]), app.tr("print.bed"), heater(&status["bed"]));
+        text(ui, &heaters, Text::Note("print_printer_heaters"));
     } else {
         let age = status["age_s"].as_f64();
-        let text = match age {
+        let unreachable = match age {
             Some(a) => solidcraft_ui_text::format("print.unreachable_since", &[("time", &hms(a))]),
             None => app.tr("print.unreachable").to_string(),
         };
-        ui.colored_label(t.warning, text);
+        status_line(ui, &unreachable, StatusTone::Warning);
         if let Some(e) = status["error"].as_str() {
-            wrapped_small(ui, e);
+            text(ui, e, Text::Note("print_printer_error"));
         }
     }
     job_line(app, ui, state);
@@ -815,76 +818,65 @@ fn printer_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
 }
 
 fn result_rows(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
-    let t = Tokens::get();
+    use crate::ui_kit::{StatusTone, Text, status_line, text, value_row};
     if held.stale(&app.session.doc) {
-        ui.add(egui::Label::new(egui::RichText::new(app.tr("print.stale")).color(t.warning)).wrap());
+        status_line(ui, app.tr("print.stale"), StatusTone::Warning);
     }
-    ui.heading(app.tr("print.estimate"));
     let paths = &held.sliced.toolpaths;
-    egui::Grid::new("print_estimate").num_columns(2).min_col_width(96.0).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
-        ui.label(app.tr("print.layers"));
-        ui.label(format!("{} ({:.2} mm)", paths.layers.len(), paths.layers.last().map_or(0.0, |l| l.z)));
-        ui.end_row();
-        ui.label(app.tr("print.time"));
-        ui.label(hms(held.sliced.time_s));
-        ui.end_row();
-        ui.label(app.tr("print.filament"));
-        ui.label(format!("{:.2} m · {:.1} g", held.sliced.filament_mm / 1000.0, held.sliced.filament_g));
-        ui.end_row();
-    });
-    ui.small(&held.slicer);
+    value_row(ui, app.tr("print.layers"), &format!("{} ({:.2} mm)", paths.layers.len(), paths.layers.last().map_or(0.0, |l| l.z)));
+    value_row(ui, app.tr("print.time"), &hms(held.sliced.time_s));
+    value_row(ui, app.tr("print.filament"), &format!("{:.2} m · {:.1} g", held.sliced.filament_mm / 1000.0, held.sliced.filament_g));
+    text(ui, &held.slicer, Text::Note("print_slicer"));
     if !held.sliced.report.refused.is_empty() {
-        ui.label(app.tr("print.refused"));
+        status_line(ui, app.tr("print.refused"), StatusTone::Warning);
         for r in held.sliced.report.refused.iter().take(12) {
-            ui.small(format!("{} = {}: {}", r.key, r.value, r.reason));
+            text(ui, &format!("{} = {}: {}", r.key, r.value, r.reason), Text::Note("print_refused"));
         }
     }
     if !held.sliced.report.warnings.is_empty() {
-        ui.label(app.tr("print.warnings"));
+        status_line(ui, app.tr("print.warnings"), StatusTone::Warning);
         for w in held.sliced.report.warnings.iter().take(12) {
-            ui.small(w);
+            text(ui, w, Text::Note("print_warning"));
         }
     }
 }
 
 fn toolpath_controls(app: &mut SolveApp, ui: &mut egui::Ui, held: &HeldSlice) {
-    ui.heading(app.tr("print.toolpaths_title"));
+    use crate::ui_kit::{Text, text, value_row};
     let paths = &held.sliced.toolpaths;
     let n = paths.layers.len();
     if let Some(layer) = paths.layers.get(shown_layer(app, n).saturating_sub(1)) {
-        ui.label(format!("{} {} / {n}", app.tr("print.layer"), shown_layer(app, n)));
-        ui.small(format!("z {:.2} mm · {:.2} mm · {} · {} segments", layer.z, layer.height, hms(f64::from(layer.time_s)), layer.segments()));
+        value_row(ui, app.tr("print.layer"), &format!("{} / {n}", shown_layer(app, n)));
+        let detail = format!("z {:.2} mm · {:.2} mm · {} · {} segments", layer.z, layer.height, hms(f64::from(layer.time_s)), layer.segments());
+        text(ui, &detail, Text::Note("print_layer_detail"));
     }
     let travels_label = app.tr("print.show_travels").to_string();
     crate::ui_kit::checkbox(ui, &travels_label, &mut app.print_workspace.show_travels);
-    ui.label(app.tr("print.features"));
+    crate::ui_kit::section_heading(ui, app.tr("print.features"));
     if !paths.file_beads.is_empty() {
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
-            let c = FILE_BEAD_COLOR;
-            ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c[0], c[1], c[2]));
-            ui.label(app.tr("print.file_beads"));
-            ui.small(format!("{:.2} m", paths.file_beads.iter().map(|b| b.length_mm()).sum::<f64>() / 1000.0));
-        });
+        let length = paths.file_beads.iter().map(|b| b.length_mm()).sum::<f64>();
+        legend_row(ui, FILE_BEAD_COLOR, app.tr("print.file_beads"), length);
     }
     for total in paths.by_feature() {
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
-            let c = feature_color(total.feature);
-            ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c[0], c[1], c[2]));
-            ui.label(total.feature.map_or("Unknown", Feature::label));
-            ui.small(format!("{:.2} m", total.length_mm / 1000.0));
-        });
+        legend_row(ui, feature_color(total.feature), total.feature.map_or("Unknown", Feature::label), total.length_mm);
     }
+}
+
+/// One line of the toolpath legend: the feature's colour, its name and the length laid.
+fn legend_row(ui: &mut egui::Ui, color: [u8; 4], name: &str, length_mm: f64) {
+    let t = Tokens::get();
+    ui.horizontal(|ui| {
+        let (swatch, _) = ui.allocate_exact_size(vec2(t.space_12, t.space_12), Sense::hover());
+        ui.painter().rect_filled(swatch, t.radius_sm, Color32::from_rgb(color[0], color[1], color[2]));
+        ui.label(name);
+        crate::ui_kit::text(ui, &format!("{:.2} m", length_mm / 1000.0), crate::ui_kit::Text::Note("print_legend_length"));
+    });
 }
 
 pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let rect = ui.max_rect();
     app.viewport.rect = Some(rect);
-    // The host forgets every panel at the start of a frame and draws ours after this scene: tell
-    // it where they stood at the last frame, so a wheel or a press over them is not the camera's.
-    crate::shell::register_panel(app, "print:panel", app.print_workspace.panel_rect);
-    crate::shell::register_panel(app, "print:settings", app.print_workspace.settings_rect);
+    sync_tool(app);
     // Where the view navigator stood at the last frame, once the host had placed the panels.
     let navigator = app.viewport.layout.as_ref().map(|l| l.axis_view);
     crate::viewport::refresh_layout(app, ui.ctx());

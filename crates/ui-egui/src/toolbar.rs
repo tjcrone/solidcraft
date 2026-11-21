@@ -2724,6 +2724,11 @@ pub fn shortcuts(app: &mut SolveApp, ctx: &egui::Context) {
         if k != Key::Escape {
             app.last_escape = None;
         }
+        // Esc puts an open Print tool down, as it closes a Drawing tool's panel.
+        if shown && k == Key::Escape && crate::print_workspace::close_tool(app) {
+            app.esc_handled = true;
+            continue;
+        }
         if shown && crate::print_workspace::layer_key(app, k, mods) {
             continue;
         }

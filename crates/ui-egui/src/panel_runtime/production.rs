@@ -33,6 +33,10 @@ enum Product {
     Bom,
     DrawingSheets,
     DrawingInspector,
+    PrintSettings,
+    PrintTool,
+    PrintPreview,
+    PrintDevice,
 }
 impl Product {
     const ALL: &[Self] = &[
@@ -47,8 +51,13 @@ impl Product {
         Self::Bom,
         Self::DrawingSheets,
         Self::DrawingInspector,
+        Self::PrintSettings,
+        Self::PrintTool,
+        Self::PrintPreview,
+        Self::PrintDevice,
     ];
     const NEW_RENDER: [Self; 3] = [Self::RenderLibrary, Self::RenderInspector, Self::RenderShots];
+    const PRINT: [Self; 4] = [Self::PrintSettings, Self::PrintTool, Self::PrintPreview, Self::PrintDevice];
 
     fn all_map<T>(f: impl FnMut(Self) -> T) -> [T; Self::ALL.len()] {
         let mut f = f;
@@ -68,6 +77,10 @@ impl Product {
             Self::Bom => 8,
             Self::DrawingSheets => 9,
             Self::DrawingInspector => 10,
+            Self::PrintSettings => 11,
+            Self::PrintTool => 12,
+            Self::PrintPreview => 13,
+            Self::PrintDevice => 14,
         }
     }
     fn visible(self, app: &crate::SolveApp) -> bool {
@@ -83,6 +96,8 @@ impl Product {
             Self::Bom => crate::bom_panel::available(app),
             Self::DrawingSheets => crate::drawing_workspace::sheets_visible(app),
             Self::DrawingInspector => crate::drawing_workspace::inspector_visible(app),
+            Self::PrintSettings | Self::PrintPreview | Self::PrintDevice => true,
+            Self::PrintTool => crate::print_workspace::tool_visible(app),
         }
     }
     fn set_visible(self, app: &mut crate::SolveApp, open: bool) {
@@ -100,7 +115,10 @@ impl Product {
             }
             Self::DrawingInspector => {}
             Self::Bom if !open => app.bom = None,
-            Self::Bom | Self::SketchOptions => {}
+            Self::PrintTool if !open => {
+                crate::print_workspace::close_tool(app);
+            }
+            Self::Bom | Self::SketchOptions | Self::PrintSettings | Self::PrintTool | Self::PrintPreview | Self::PrintDevice => {}
         }
     }
 
@@ -117,6 +135,10 @@ impl Product {
             Self::Bom => "bom",
             Self::DrawingSheets => "drawing-sheets",
             Self::DrawingInspector => "drawing-inspector",
+            Self::PrintSettings => "print-settings",
+            Self::PrintTool => "print-tool",
+            Self::PrintPreview => "print-preview",
+            Self::PrintDevice => "print-device",
         }
     }
     fn kind(self) -> &'static str {
@@ -132,6 +154,10 @@ impl Product {
             Self::Bom => "solidcraft.bom",
             Self::DrawingSheets => "solidcraft.drawing_sheets",
             Self::DrawingInspector => "solidcraft.drawing_inspector",
+            Self::PrintSettings => "solidcraft.print_settings",
+            Self::PrintTool => "solidcraft.print_tool",
+            Self::PrintPreview => "solidcraft.print_preview",
+            Self::PrintDevice => "solidcraft.print_device",
         }
     }
     fn title_key(self) -> &'static str {
@@ -147,6 +173,10 @@ impl Product {
             Self::Bom => crate::bom_panel::TITLE_KEY,
             Self::DrawingSheets => "ui.drawing_sheets.title",
             Self::DrawingInspector => "ui.drawing_sheets.settings",
+            Self::PrintSettings => "print.settings_title",
+            Self::PrintTool => "cmd.print.place",
+            Self::PrintPreview => "print.slice_title",
+            Self::PrintDevice => "print.printer_title",
         }
     }
     fn icon(self) -> &'static str {
@@ -154,7 +184,8 @@ impl Product {
             Self::SketchOptions => "sketch",
             Self::Bom => "bom",
             Self::DrawingSheets => "ws_drawing",
-            Self::DrawingInspector => "settings",
+            Self::DrawingInspector | Self::PrintSettings => "settings",
+            Self::PrintTool => "print_centre_on_bed",
             _ => "list",
         }
     }
@@ -178,6 +209,10 @@ impl Product {
                     && app.session.drawing("drawing.inspect").is_ok()
             }
             Self::DrawingInspector => crate::drawing_workspace::inspector_visible(app),
+            Self::PrintSettings => print && !crate::printer_dashboard::active(app),
+            Self::PrintTool => crate::print_workspace::tool_visible(app),
+            Self::PrintPreview => app.ui.tab == crate::print_workspace::PREVIEW,
+            Self::PrintDevice => crate::printer_dashboard::active(app),
         }
     }
     fn default_zone(self, placement: &crate::prefs::Prefs) -> Zone {
@@ -187,7 +222,7 @@ impl Product {
             Self::RenderBrowser | Self::RenderLibrary if placement.render_browser_side == "right" => Zone::Right,
             Self::RenderShots => Zone::Bottom,
             Self::RenderInspector if placement.render_inspector_side != "left" => Zone::Right,
-            Self::SketchOptions | Self::Bom => Zone::Right,
+            Self::SketchOptions | Self::Bom | Self::PrintTool | Self::PrintPreview | Self::PrintDevice => Zone::Right,
             Self::DrawingInspector if placement.drawing_panel_side != "left" => Zone::Right,
             _ => Zone::Left,
         }
@@ -198,6 +233,7 @@ impl Product {
             Self::History if stack_history => Self::Browser,
             Self::DrawingSheets => Self::Browser,
             Self::RenderLibrary => Self::RenderBrowser,
+            Self::PrintPreview | Self::PrintDevice => Self::PrintTool,
             _ => self,
         }
     }
@@ -225,7 +261,14 @@ impl Product {
             Self::RenderInspector => vec![("remove", "render.inspector_remove", "delete")],
             Self::DrawingSheets => vec![("add-sheet", "ui.drawing_sheets.add", "plus")],
             Self::Browser => vec![("magnifier", "ui.browser_search_hint", "zoom")],
-            Self::RenderShots | Self::SketchOptions | Self::Bom | Self::DrawingInspector => Vec::new(),
+            Self::RenderShots
+            | Self::SketchOptions
+            | Self::Bom
+            | Self::DrawingInspector
+            | Self::PrintSettings
+            | Self::PrintTool
+            | Self::PrintPreview
+            | Self::PrintDevice => Vec::new(),
         };
         entries.into_iter().map(|(id, key, icon)| HeaderActionSpec { id: ControlId(id.into()), label_key: key.into(), icon: icon.into() }).collect()
     }
@@ -247,6 +290,14 @@ impl Product {
         }
         if self == Self::DrawingInspector {
             presentation.title = crate::drawing_workspace::inspector_title(app).into();
+        }
+        if self == Self::PrintSettings {
+            presentation.status = crate::print_settings_panel::shared_status(app);
+        }
+        if self == Self::PrintTool
+            && let Some(title) = crate::print_workspace::tool_title(app)
+        {
+            presentation.title = title;
         }
         if self == Self::Browser && crate::drawing_workspace::active(app) && app.session.drawing("drawing.inspect").is_ok() {
             presentation.status = Some(app.tr("ui.drawing_browser_one_drawing").into());
@@ -342,7 +393,14 @@ impl Product {
                     pressed: Some(crate::browser_search::bar_shown(app)),
                 }]
             }
-            Self::RenderShots | Self::SketchOptions | Self::Bom | Self::DrawingInspector => Vec::new(),
+            Self::RenderShots
+            | Self::SketchOptions
+            | Self::Bom
+            | Self::DrawingInspector
+            | Self::PrintSettings
+            | Self::PrintTool
+            | Self::PrintPreview
+            | Self::PrintDevice => Vec::new(),
         };
         presentation
     }
@@ -613,7 +671,14 @@ pub(crate) fn drain_production_actions(app: &mut crate::SolveApp) -> PanelResult
                 }
             }
             Product::Browser => crate::browser::magnifier(app),
-            Product::RenderShots | Product::SketchOptions | Product::Bom | Product::DrawingInspector => {}
+            Product::RenderShots
+            | Product::SketchOptions
+            | Product::Bom
+            | Product::DrawingInspector
+            | Product::PrintSettings
+            | Product::PrintTool
+            | Product::PrintPreview
+            | Product::PrintDevice => {}
         }
     }
     Ok(())
@@ -782,7 +847,9 @@ pub(crate) fn sync_production_visibility(app: &mut crate::SolveApp) -> PanelResu
         let id = InstanceId::new(product.id())?;
         let instance = layout.instance(&id).ok();
         if instance.is_none()
-            && (Product::NEW_RENDER.contains(&product) || matches!(product, Product::DrawingSheets | Product::DrawingInspector))
+            && (Product::NEW_RENDER.contains(&product)
+                || Product::PRINT.contains(&product)
+                || matches!(product, Product::DrawingSheets | Product::DrawingInspector))
             && visible
             && product.available(app)
             && adding.is_none()
@@ -791,7 +858,7 @@ pub(crate) fn sync_production_visibility(app: &mut crate::SolveApp) -> PanelResu
         {
             // Layouts saved before these registrations gain one panel at a time.
             // Reuse a compatible side column when possible.
-            let zone = if matches!(product, Product::DrawingSheets | Product::DrawingInspector) {
+            let zone = if Product::PRINT.contains(&product) || matches!(product, Product::DrawingSheets | Product::DrawingInspector) {
                 product.default_zone(&app.preferences)
             } else {
                 product.default_zone(&crate::prefs::Prefs::default())
@@ -800,12 +867,25 @@ pub(crate) fn sync_production_visibility(app: &mut crate::SolveApp) -> PanelResu
             let size = integration.runtime().layout().registry().get(&kind)?.default_size;
             let section = next_section_id_with_reservations(layout, &integration.preference_identity_reservations()?)?;
             let companion = product.column_owner(false);
-            let anchor = layout
-                .containing(&InstanceId::new(companion.id())?)
-                .ok()
-                .filter(|section| section.location.zone() == zone)
-                .or_else(|| layout.sections.iter().find(|section| section.location.zone() == zone));
-            let destination = if let Some(anchor) = anchor.filter(|_| zone.side()) {
+            let own_column = layout.containing(&InstanceId::new(companion.id())?).ok().filter(|section| section.location.zone() == zone);
+            // A Print panel never stacks under another workspace's panel: it takes a column of its
+            // own width beside that panel's, and only the workspace shown fills its columns.
+            let beside = layout
+                .sections
+                .iter()
+                .find(|section| section.location.zone() == zone && !section.tabs.iter().any(|id| id.0 == Product::Assistant.id()))
+                .filter(|_| own_column.is_none() && Product::PRINT.contains(&product));
+            let anchor = own_column.or_else(|| layout.sections.iter().find(|section| section.location.zone() == zone));
+            let destination = if let Some(beside) = beside {
+                let reserved = integration.placement_reservations()?;
+                Destination::Relative {
+                    section: beside.id.clone(),
+                    placement: RelativePlacement::AfterColumn,
+                    new_section: section,
+                    new_column: Some(next_column_id_with_reservations(layout, &reserved.columns)?),
+                    size,
+                }
+            } else if let Some(anchor) = anchor.filter(|_| zone.side()) {
                 Destination::Relative {
                     section: anchor.id.clone(),
                     placement: if product == Product::DrawingSheets { RelativePlacement::Above } else { RelativePlacement::Below },
@@ -1029,7 +1109,13 @@ fn registry() -> PanelResult<PanelRegistry> {
             allowed_zones,
             default_zone: match product {
                 Product::History | Product::RenderShots => Zone::Bottom,
-                Product::RenderInspector | Product::SketchOptions | Product::Bom | Product::DrawingInspector => Zone::Right,
+                Product::RenderInspector
+                | Product::SketchOptions
+                | Product::Bom
+                | Product::DrawingInspector
+                | Product::PrintTool
+                | Product::PrintPreview
+                | Product::PrintDevice => Zone::Right,
                 _ => Zone::Left,
             },
             min_size: Size {
@@ -1044,14 +1130,21 @@ fn registry() -> PanelResult<PanelRegistry> {
                     _ => tokens.control_height,
                 },
             },
-            default_size: Size { width: crate::prefs::DEFAULT_BROWSER_WIDTH, height: if history || shots { bottom_height } else { 320.0 } },
+            default_size: Size {
+                width: match product {
+                    Product::PrintSettings => crate::print_settings_panel::WIDTH,
+                    Product::PrintTool | Product::PrintPreview | Product::PrintDevice => crate::print_workspace::PANEL_WIDTH,
+                    _ => crate::prefs::DEFAULT_BROWSER_WIDTH,
+                },
+                height: if history || shots { bottom_height } else { 320.0 },
+            },
             max_size: Size { width: MAX_LOGICAL, height: MAX_LOGICAL },
             edge_rule: if assistant { EdgeRule::PinOuter } else { EdgeRule::None },
             surface: PanelSurface::Translucent,
             features: PanelFeatures {
                 popout: true,
-                hot_closable: assistant || bom || product == Product::DrawingInspector,
-                closable: !sketch,
+                hot_closable: assistant || bom || matches!(product, Product::DrawingInspector | Product::PrintTool),
+                closable: !sketch && !matches!(product, Product::PrintSettings | Product::PrintPreview | Product::PrintDevice),
                 ..Default::default()
             },
             side_height_policy: if assistant { SideHeightPolicy::Fill } else { SideHeightPolicy::Content },
@@ -1534,6 +1627,10 @@ impl FramePanelContent for ProductionFrame<'_> {
             Product::RenderLibrary => crate::render_workspace::library::shared_library(self.app, ui),
             Product::RenderInspector => crate::render_workspace::inspector_panel::shared_body(self.app, ui),
             Product::RenderShots => crate::render_workspace::shots::shared_shots(self.app, ui, context.flow, slot == ContentSlot::Inline),
+            Product::PrintSettings => crate::print_settings_panel::shared_body(self.app, ui),
+            Product::PrintTool => crate::print_workspace::tool_body(self.app, ui),
+            Product::PrintPreview => crate::print_workspace::preview_body(self.app, ui),
+            Product::PrintDevice => crate::printer_dashboard::shared_body(self.app, ui),
         }
         let capture = ui.ctx().data_mut(|data| data.remove_temp::<Option<FocusCapture>>(focus_capture_id()).flatten());
         if context.document.as_ref().map(|document| document.0.as_str()) != Some(self.app.session.document_id.as_str()) {
