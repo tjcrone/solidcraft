@@ -1,4 +1,4 @@
-//! The Print workspace's settings card, down the window's left side on Prepare and Preview: the
+//! The Print workspace's Settings panel, in the shared host's left column on Prepare and Preview: the
 //! profile files the values come from, then the slicer's settings in the sections OrcaSlicer
 //! users know (Printer, Filament, and Process as Quality, Strength, Speed, Support and Others),
 //! each folded until opened, and an Advanced section for any key the catalogue leaves out. A
@@ -313,8 +313,8 @@ pub fn fields() -> impl Iterator<Item = &'static Field> {
     SECTIONS.iter().flat_map(|s| s.fields.iter())
 }
 
-/// The card's width: room for a label, the widest control (a choice) and its reset button.
-const WIDTH: f32 = 340.0;
+/// The panel's default width: room for a label, the widest control (a choice) and its reset button.
+pub(crate) const WIDTH: f32 = 340.0;
 
 /// The label column of the card's rows: what the width leaves beside a choice and its reset button.
 const LABEL_WIDTH: f32 = 136.0;
@@ -341,31 +341,27 @@ struct Cache {
     ints: BTreeMap<&'static str, i64>,
 }
 
-/// The settings card at the window's left edge; the rectangle it takes.
-pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Rect {
-    use ui_kit::{Container, Edge, Surface};
+/// How many settings the design overrides, beside the panel's title.
+pub(crate) fn shared_status(app: &SolveApp) -> Option<String> {
+    let overridden = app.session.doc.print.overlay.len();
+    (overridden > 0).then(|| solidcraft_ui_text::format("print.overrides_short", &[("n", &overridden.to_string())]))
+}
+
+/// The panel's body in the shared host: the search, then the sections or the search's results.
+pub(crate) fn shared_body(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::print_workspace::load_settings(app);
-    Container::new(ui.ctx(), Surface::Panel)
-        .edge("sc_print_settings_card", Edge::Left)
-        .exact_size(WIDTH)
-        .resizable(false)
-        .frame(crate::print_workspace::panel_frame(ui.ctx(), crate::frame::Side::Left))
-        .show(ui, |ui| {
-            ui_kit::scope(ui, |ui| {
-                ui.heading(app.tr("print.settings_title"));
-                search_row(app, ui);
-                ui.add_space(Tokens::get().space_4);
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if app.print_settings_panel.filter.trim().is_empty() {
-                        sections(app, ui);
-                    } else {
-                        search_results(app, ui);
-                    }
-                });
-            });
-        })
-        .response
-        .rect
+    ui_kit::scope(ui, |ui| {
+        search_row(app, ui);
+        let top = ui.cursor().top();
+        let body = egui::ScrollArea::vertical().id_salt("print_settings").min_scrolled_height(0.0).auto_shrink([false, true]).show(ui, |ui| {
+            if app.print_settings_panel.filter.trim().is_empty() {
+                sections(app, ui);
+            } else {
+                search_results(app, ui);
+            }
+        });
+        crate::panel_runtime::report_content_extent(ui, top, body.content_size.y, false);
+    });
 }
 
 /// Every section, folded until opened; the profile files start open.
@@ -625,7 +621,7 @@ fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, field: &'static Field, refus
         }
     });
     if let Some(reason) = refused.get(field.key) {
-        ui.colored_label(t.warning, reason);
+        ui_kit::status_line(ui, reason, ui_kit::StatusTone::Warning);
     }
 }
 
@@ -705,7 +701,7 @@ fn advanced_section(app: &mut SolveApp, ui: &mut egui::Ui) {
     let value = app.print_settings_panel.custom_value.trim().to_string();
     let known = solidcraft_engine::print::engine_reads(&key);
     if !key.is_empty() && !known {
-        ui.colored_label(t.warning, app.tr("print.advanced_unknown"));
+        ui_kit::status_line(ui, app.tr("print.advanced_unknown"), ui_kit::StatusTone::Warning);
     }
     if ui_kit::button(ui, app.tr("print.advanced_set"), ui_kit::Button::Enabled(!key.is_empty() && !value.is_empty())).clicked() {
         set(app, &key, Value::String(value));
@@ -733,7 +729,7 @@ mod tests {
     fn every_label_and_option_is_translated() {
         let mut ids: Vec<&str> = fields().map(|f| f.label).collect();
         ids.extend(SECTIONS.iter().map(|s| s.label));
-        ids.extend(["print.settings_title", "print.page_files", "print.page_advanced"]);
+        ids.extend(["print.settings_title", "print.overrides_short", "print.page_files", "print.page_advanced"]);
         for field in fields() {
             if let Kind::Choice(options) = field.kind {
                 ids.extend(options.iter().map(|(_, l)| *l));

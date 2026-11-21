@@ -1827,22 +1827,6 @@ impl crate::SolveApp {
         if !self.embedded {
             crate::toolbar::toolbar(self, ui);
         }
-        // Print's panel stands at the window's right edge above the scene. It is registered like a
-        // workspace card, so fitting and pointer shielding leave its room alone.
-        let print_panel = if crate::printer_dashboard::active(self) {
-            Some(crate::printer_dashboard::panel(self, ui))
-        } else if crate::print_workspace::active(self) {
-            Some(crate::print_workspace::panel(self, ui))
-        } else {
-            None
-        };
-        crate::shell::register_panel(self, "print:panel", print_panel);
-        self.print_workspace.panel_rect = print_panel;
-        // The settings card stands at the left edge on Prepare and Preview.
-        let print_settings =
-            (crate::print_workspace::active(self) && !crate::printer_dashboard::active(self)).then(|| crate::print_settings_panel::panel(self, ui));
-        crate::shell::register_panel(self, "print:settings", print_settings);
-        self.print_workspace.settings_rect = print_settings;
         crate::ui_kit::Container::new(ui.ctx(), crate::ui_kit::Surface::Viewport)
             .central()
             .frame(crate::ui_kit::Container::new(ui.ctx(), crate::ui_kit::Surface::Viewport).edge_frame(egui::Color32::TRANSPARENT))

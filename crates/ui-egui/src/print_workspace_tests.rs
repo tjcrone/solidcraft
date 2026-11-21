@@ -388,3 +388,41 @@ fn a_typed_print_setting_lands_whole_as_one_change() {
     h.app.run("edit.undo", json!({})).unwrap_or_else(|e| panic!("{e}"));
     assert!(!h.app.session.doc.print.overlay.contains_key("inner_wall_speed"), "one undo takes the whole value back");
 }
+
+/// Print's panels are the shared host's: Settings stands on Prepare and Preview, a tool's options
+/// only while the tool is open (Esc and another tab put it down), Preview's and the Printer's
+/// panels on their own tabs, and none of them in Design.
+#[test]
+fn the_print_panels_are_the_shared_hosts_and_a_tools_panel_comes_and_goes() {
+    use serde_json::json;
+    fn shown(h: &crate::scenario::Harness) -> Vec<String> {
+        let sections = h.app.universal_panel_frame().map(|frame| frame.layout.sections.iter().map(|section| section.instance.0.clone()).collect());
+        let mut print: Vec<String> = sections.unwrap_or_default();
+        print.retain(|id| id.starts_with("print-") || id == "browser");
+        print.sort();
+        print
+    }
+    let mut h = crate::scenario::Harness::new();
+    h.frames(6);
+    assert_eq!(shown(&h), ["browser"], "Design");
+    crate::workspace::enter(&mut h.app, "print").unwrap_or_else(|e| panic!("{e}"));
+    h.frames(6);
+    assert_eq!(shown(&h), ["print-settings"], "Prepare");
+    h.app.start("print.place");
+    h.frames(6);
+    assert_eq!(shown(&h), ["print-settings", "print-tool"], "Place on Bed opens its options");
+    h.step(&json!({"key": "Escape"})).unwrap_or_else(|e| panic!("{e}"));
+    h.frames(6);
+    assert_eq!(shown(&h), ["print-settings"], "Esc puts the tool down");
+    h.app.start("print.place");
+    h.app.ui.tab = PREVIEW.into();
+    h.frames(6);
+    assert_eq!(h.app.print_workspace.tool, None, "a tool belongs to Prepare");
+    assert_eq!(shown(&h), ["print-preview", "print-settings"], "Preview");
+    h.app.ui.tab = DEVICE.into();
+    h.frames(6);
+    assert_eq!(shown(&h), ["print-device"], "Device");
+    crate::workspace::enter(&mut h.app, "design").unwrap_or_else(|e| panic!("{e}"));
+    h.frames(6);
+    assert_eq!(shown(&h), ["browser"], "back in Design");
+}

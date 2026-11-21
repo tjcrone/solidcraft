@@ -96,7 +96,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         "set: {key: value} (OrcaSlicer key names; a null value removes the override) → overlay: {key: value}. Saved in the design; print.slice lays them over the settings files",
     ),
     CommandSpec::new(SETTINGS_CLEAR, "Clear Print Settings", settings_clear).doc_only().icon("delete").params("keys?: [names] (default: all) → overlay: {key: value}"),
-    CommandSpec::new(PLACE, "Centre on Bed", place).doc_only().at("PREPARE", "PLACE").icon("print_centre_on_bed").params(
+    CommandSpec::new(PLACE, "Place on Bed", place).doc_only().at("PREPARE", "PLACE").icon("print_centre_on_bed").params(
         "x?: mm from the bed's centre; y?: mm; rotation?: degrees about Z, about the design's footprint centre; centre?: true puts it back in the middle, unturned → placement: {x, y, rotation}. Saved in the design; print.slice puts the design there",
     ),
     CommandSpec::new(BED, "Print Bed", bed).noundo().doc_only().icon("inspect").params(

@@ -963,7 +963,7 @@ pub const RIBBON_LABELS: &[(&str, &str)] = &[
     ("plastic.assign_rule", "Assign Rule"),
     ("plastic.manage_rules", "Plastic Rules"),
     ("pointcloud.insert", "Point Clouds"),
-    ("print.place", "Centre"),
+    ("print.place", "Place"),
     ("print.upload", "Upload"),
     ("render.scene", "Scene"),
     ("sheet.export_bend_table", "Bend Table"),
