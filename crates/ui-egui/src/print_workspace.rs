@@ -941,6 +941,12 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             selection_tint: [0.0; 3],
             sky: [0.0; 4],
             moving: None,
+            selection_all: false,
+            hover_body: None,
+            occlusion: false,
+            edge_px: solidcraft_viewport_gpu::view::EDGE_PX,
+            motions: Default::default(),
+            ground: None,
         });
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         Ok(())
