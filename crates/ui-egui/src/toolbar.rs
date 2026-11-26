@@ -1388,7 +1388,7 @@ pub(crate) fn pop_out_ribbon(app: &mut SolveApp, ui: &mut egui::Ui, content: Rec
     let t = Tokens::get();
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
-    let height = ribbon_height(app.preferences.ribbon_labels);
+    let height = ribbon_height(app.preferences.ribbon_labels, app.preferences.ribbon_big_icons);
     let margin = Container::for_layout(layout, Surface::Chrome).gap();
     let top = reveal_top.unwrap_or(content.top());
     let slide = (height + 2.0 * margin) * (1.0 - fraction);
