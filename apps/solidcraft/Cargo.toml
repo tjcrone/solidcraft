@@ -8,7 +8,7 @@ publish = false
 default-run = "solidcraft"
 
 [features]
-default = ["raytrace-cpu", "bundled-render-library", "profile", "usage-stats"]
+default = ["raytrace-cpu", "bundled-render-library", "profile"]
 # Anonymous usage statistics (docs/privacy.md). A build without it (`--no-default-features`, or
 # leaving it out) has no counting, no notice, no network code for them and no endpoint.
 usage-stats = ["solidcraft-ui-egui/usage-stats"]
